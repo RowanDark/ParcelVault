@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – {{ parcel.TrackingNumber }}{% endblock %}
+
+{% block content %}
+<div class="pv-page-title">
+  <a href="{{ url_for('parcel_list') }}" class="text-decoration-none me-2"
+     style="color:var(--pv-muted)"><i class="bi bi-arrow-left"></i></a>
+  <i class="bi bi-box-seam"></i>
+  <span style="font-size:1rem;font-weight:400;color:var(--pv-muted)">Parcel Detail</span>
+</div>
+
+<div class="row g-4">
+
+  <!-- Details card -->
+  <div class="col-lg-7">
+    <div class="pv-card">
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <div class="detail-label">Tracking Number</div>
+          <code style="font-size:1.1rem;color:var(--pv-accent)">{{ parcel.TrackingNumber }}</code>
+        </div>
+        {% set sl = parcel.Status | lower | replace(' ', '-') %}
+        <span class="badge-status badge-{{ sl }}">{{ parcel.Status }}</span>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-sm-6">
+          <div class="detail-label">Carrier</div>
+          <div class="detail-value">{{ parcel.Shipper }}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="detail-label">Recipient</div>
+          <div class="detail-value">{{ parcel.Recipient }}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="detail-label">Storage Location</div>
+          <div class="detail-value">{{ parcel.LocationName or '—' }}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="detail-label">Received</div>
+          <div class="detail-value">{{ parcel.ReceivedDate[:16] if parcel.ReceivedDate else '—' }}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="detail-label">Received By</div>
+          <div class="detail-value">{{ parcel.ReceivedBy or '—' }}</div>
+        </div>
+        {% if parcel.Notes %}
+        <div class="col-12">
+          <div class="detail-label">Notes</div>
+          <div class="detail-value">{{ parcel.Notes }}</div>
+        </div>
+        {% endif %}
+
+        {% if parcel.Status == 'Delivered' %}
+        <div class="col-12"><hr style="border-color:var(--pv-border);margin:0.25rem 0"></div>
+        <div class="col-sm-6">
+          <div class="detail-label">Delivered</div>
+          <div class="detail-value">{{ parcel.DeliveredDate[:16] if parcel.DeliveredDate else '—' }}</div>
+        </div>
+        <div class="col-sm-6">
+          <div class="detail-label">Signed By</div>
+          <div class="detail-value">{{ parcel.DeliveredTo or '—' }}</div>
+        </div>
+        {% if parcel.SignaturePath and parcel.SignaturePath.startswith('data:') %}
+        <div class="col-12">
+          <div class="detail-label">Signature</div>
+          <img src="{{ parcel.SignaturePath }}" alt="Signature"
+               style="max-width:300px;border-radius:6px;background:#fff;padding:6px;margin-top:4px">
+        </div>
+        {% endif %}
+        {% endif %}
+      </div>
+
+      {% if parcel.Status != 'Delivered' %}
+      <div class="mt-4">
+        <a href="{{ url_for('deliver', parcel_id=parcel.ParcelID) }}" class="btn btn-primary">
+          <i class="bi bi-truck me-1"></i>Confirm Delivery
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- History for this parcel -->
+  <div class="col-lg-5">
+    <div class="pv-card">
+      <h6 class="text-white mb-3"><i class="bi bi-clock-history me-1" style="color:var(--pv-accent)"></i>Parcel History</h6>
+      {% if history %}
+      <div class="timeline">
+        {% for h in history %}
+        <div class="mb-3" style="border-left:2px solid var(--pv-border);padding-left:1rem;position:relative">
+          <div style="font-size:0.78rem;color:var(--pv-muted)">
+            {{ h.ActionDate[:16] if h.ActionDate else '' }} &middot; {{ h.PerformedBy or 'system' }}
+          </div>
+          <div style="font-weight:600;font-size:0.9rem;color:var(--pv-text)">{{ h.Action }}</div>
+          {% if h.Recipient %}<div style="font-size:0.82rem;color:var(--pv-muted)">{{ h.Recipient }}</div>{% endif %}
+          {% if h.LocName %}<div style="font-size:0.82rem;color:var(--pv-muted)"><i class="bi bi-geo-alt me-1"></i>{{ h.LocName }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:var(--pv-muted);font-size:0.85rem">No history records.</div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

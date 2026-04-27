@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – Receive Parcel{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-plus-circle-fill"></i>Receive Parcel</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="pv-card">
+      <form method="post" novalidate>
+
+        <div class="mb-3">
+          <label for="tracking_number" class="form-label">Tracking Number <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="tracking_number" name="tracking_number"
+                 value="{{ form.get('tracking_number', '') }}"
+                 placeholder="Scan barcode or type manually" autofocus autocomplete="off">
+          <div id="dup-warning">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            This tracking number already exists in the system.
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="shipper" class="form-label">Carrier / Shipper <span class="text-danger">*</span></label>
+          <select class="form-select" id="shipper" name="shipper">
+            {% for c in carriers %}
+              <option value="{{ c }}" {% if form.get('shipper', 'UPS') == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="recipient" class="form-label">Recipient <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="recipient" name="recipient"
+                 value="{{ form.get('recipient', '') }}"
+                 placeholder="Full name or department">
+        </div>
+
+        <div class="mb-3">
+          <label for="location_id" class="form-label">Storage Location <span class="text-danger">*</span></label>
+          <select class="form-select" id="location_id" name="location_id">
+            <option value="">— Select location —</option>
+            {% for loc in locations %}
+              <option value="{{ loc.LocationID }}"
+                {% if form.get('location_id')|string == loc.LocationID|string %}selected{% endif %}>
+                {{ loc.LocationName }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label for="received_date" class="form-label">Received Date / Time</label>
+          <input type="datetime-local" class="form-control" id="received_date" name="received_date"
+                 value="{{ form.get('received_date', '') }}">
+        </div>
+
+        <div class="mb-4">
+          <label for="notes" class="form-label">Notes</label>
+          <textarea class="form-control" id="notes" name="notes" rows="3"
+                    placeholder="Damage, special handling, etc.">{{ form.get('notes', '') }}</textarea>
+        </div>
+
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-primary px-4">
+            <i class="bi bi-save me-1"></i>Save Parcel
+          </button>
+          <a href="{{ url_for('intake') }}" class="btn btn-outline-secondary px-4">
+            <i class="bi bi-x-circle me-1"></i>Clear
+          </a>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

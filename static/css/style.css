@@ -1,0 +1,300 @@
+/* ParcelVault – dark navy brand theme */
+
+:root {
+  --pv-dark:        #0b1526;
+  --pv-navy:        #111f3a;
+  --pv-navy-card:   #172240;
+  --pv-navy-input:  #1c2b50;
+  --pv-border:      #253d6e;
+  --pv-accent:      #3e72e8;
+  --pv-accent-dim:  #2d5ec4;
+  --pv-text:        #d4e0f5;
+  --pv-muted:       #7a94bc;
+  --pv-success:     #1db954;
+  --pv-warning:     #e0922a;
+  --pv-danger:      #c93636;
+  --pv-info:        #2b89cc;
+}
+
+/* ── Global ──────────────────────────────────────────────── */
+body {
+  background-color: var(--pv-dark);
+  color: var(--pv-text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* ── Navbar ──────────────────────────────────────────────── */
+.pv-navbar {
+  background-color: var(--pv-navy);
+  border-bottom: 1px solid var(--pv-border);
+  padding: 0.6rem 0;
+}
+
+.pv-brand {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffffff !important;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.pv-version {
+  font-size: 0.65rem;
+  background: var(--pv-border);
+  color: var(--pv-muted);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: middle;
+  font-weight: 400;
+}
+
+.pv-navbar .nav-link {
+  color: var(--pv-muted) !important;
+  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pv-navbar .nav-link:hover,
+.pv-navbar .nav-link.active {
+  color: #fff !important;
+  background: rgba(62, 114, 232, 0.18);
+}
+
+.pv-btn-export {
+  background-color: var(--pv-accent);
+  color: #fff !important;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+
+.pv-btn-export:hover { background-color: var(--pv-accent-dim); }
+
+/* ── Cards ───────────────────────────────────────────────── */
+.pv-card {
+  background-color: var(--pv-navy-card);
+  border: 1px solid var(--pv-border);
+  border-radius: 10px;
+  padding: 1.5rem;
+}
+
+.pv-card-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--pv-muted);
+  margin-bottom: 0.25rem;
+}
+
+/* ── Stat counters ───────────────────────────────────────── */
+.stat-count {
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.stat-label { color: var(--pv-muted); font-size: 0.85rem; }
+
+.stat-icon {
+  font-size: 2rem;
+  opacity: 0.25;
+}
+
+/* ── Nav hub buttons ─────────────────────────────────────── */
+.hub-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--pv-navy-card);
+  border: 1px solid var(--pv-border);
+  border-radius: 12px;
+  color: var(--pv-text) !important;
+  text-decoration: none;
+  padding: 1.5rem 1rem;
+  font-size: 0.9rem;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.hub-btn i { font-size: 1.8rem; color: var(--pv-accent); }
+.hub-btn:hover {
+  background: var(--pv-navy-input);
+  border-color: var(--pv-accent);
+  transform: translateY(-2px);
+}
+
+/* ── Forms ───────────────────────────────────────────────── */
+.form-control,
+.form-select {
+  background-color: var(--pv-navy-input) !important;
+  border-color: var(--pv-border) !important;
+  color: var(--pv-text) !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--pv-accent) !important;
+  box-shadow: 0 0 0 3px rgba(62, 114, 232, 0.2) !important;
+}
+
+.form-control::placeholder { color: var(--pv-muted) !important; }
+
+label { color: var(--pv-muted); font-size: 0.85rem; font-weight: 500; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn-primary {
+  background-color: var(--pv-accent) !important;
+  border-color: var(--pv-accent) !important;
+}
+.btn-primary:hover { background-color: var(--pv-accent-dim) !important; }
+
+.btn-outline-secondary {
+  border-color: var(--pv-border) !important;
+  color: var(--pv-muted) !important;
+}
+.btn-outline-secondary:hover {
+  background-color: var(--pv-navy-input) !important;
+  color: var(--pv-text) !important;
+}
+
+/* ── Tables ──────────────────────────────────────────────── */
+.pv-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.pv-table thead th {
+  background-color: var(--pv-navy);
+  color: var(--pv-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--pv-border);
+  white-space: nowrap;
+}
+
+.pv-table tbody tr {
+  border-bottom: 1px solid rgba(37, 61, 110, 0.5);
+  transition: background 0.1s;
+}
+
+.pv-table tbody tr:hover {
+  background-color: var(--pv-navy-input);
+  cursor: pointer;
+}
+
+.pv-table tbody td {
+  padding: 0.7rem 1rem;
+  vertical-align: middle;
+  color: var(--pv-text);
+  font-size: 0.9rem;
+}
+
+.pv-table-wrap {
+  background: var(--pv-navy-card);
+  border: 1px solid var(--pv-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Status badges ───────────────────────────────────────── */
+.badge-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.badge-in-storage { background: rgba(43, 137, 204, 0.2); color: #5ab2f7; border: 1px solid #2b89cc55; }
+.badge-delivered  { background: rgba(29, 185, 84, 0.2);  color: #3dd68c; border: 1px solid #1db95455; }
+.badge-pending    { background: rgba(224, 146, 42, 0.2); color: #f5b15a; border: 1px solid #e0922a55; }
+.badge-damaged    { background: rgba(201, 54, 54, 0.2);  color: #f07575; border: 1px solid #c9363655; }
+
+/* ── Alerts ──────────────────────────────────────────────── */
+.pv-alert-success { background: rgba(29, 185, 84, 0.15);  border-color: var(--pv-success); color: #5de89a; }
+.pv-alert-error   { background: rgba(201, 54, 54, 0.15);  border-color: var(--pv-danger);  color: #f08080; }
+.pv-alert-warning { background: rgba(224, 146, 42, 0.15); border-color: var(--pv-warning); color: #f5bf7a; }
+.pv-alert-info    { background: rgba(43, 137, 204, 0.15); border-color: var(--pv-info);    color: #7ac8f5; }
+
+/* ── Page heading ────────────────────────────────────────── */
+.pv-page-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pv-page-title i { color: var(--pv-accent); }
+
+/* ── Duplicate warning badge ─────────────────────────────── */
+#dup-warning {
+  display: none;
+  color: #f07575;
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+/* ── Signature canvas ────────────────────────────────────── */
+#signature-canvas {
+  background: #fff;
+  border: 2px solid var(--pv-border);
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;
+  display: block;
+  width: 100%;
+  max-width: 500px;
+}
+
+.sig-controls { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+/* ── Filter bar ──────────────────────────────────────────── */
+.pv-filter-bar {
+  background: var(--pv-navy-card);
+  border: 1px solid var(--pv-border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+.pv-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--pv-muted);
+}
+
+.pv-empty i { font-size: 3rem; display: block; margin-bottom: 0.75rem; opacity: 0.4; }
+
+/* ── Detail label/value pairs ────────────────────────────── */
+.detail-label { color: var(--pv-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.detail-value { color: var(--pv-text); font-size: 0.95rem; margin-bottom: 1rem; }
+
+/* ── Responsive tweaks ───────────────────────────────────── */
+@media (max-width: 768px) {
+  .stat-count { font-size: 1.8rem; }
+  .pv-table thead { display: none; }
+  .pv-table tbody td { display: block; padding: 0.4rem 1rem; }
+  .pv-table tbody td::before {
+    content: attr(data-label) ': ';
+    font-weight: 600;
+    color: var(--pv-muted);
+    font-size: 0.75rem;
+  }
+}

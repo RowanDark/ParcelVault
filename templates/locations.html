@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – Locations{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-geo-alt-fill"></i>Storage Locations</div>
+
+<div class="row g-4">
+
+  <!-- Add location form -->
+  <div class="col-lg-4">
+    <div class="pv-card">
+      <h6 class="text-white mb-3"><i class="bi bi-plus-circle me-1" style="color:var(--pv-accent)"></i>Add Location</h6>
+      <form method="post" novalidate>
+        <input type="hidden" name="action" value="add">
+
+        <div class="mb-2">
+          <label class="form-label">Location Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-sm" name="location_name"
+                 placeholder="e.g. Mailroom C">
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">Description</label>
+          <input type="text" class="form-control form-control-sm" name="description"
+                 placeholder="Optional notes">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Capacity (approx.)</label>
+          <input type="number" class="form-control form-control-sm" name="capacity"
+                 min="0" placeholder="Max parcels">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-plus me-1"></i>Add Location
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Locations table -->
+  <div class="col-lg-8">
+    <div class="pv-table-wrap">
+      <table class="pv-table">
+        <thead>
+          <tr>
+            <th>Location</th>
+            <th>Description</th>
+            <th style="text-align:center">Capacity</th>
+            <th style="text-align:center">In Storage</th>
+            <th style="text-align:center">Status</th>
+            <th style="text-align:right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for loc in locations %}
+          <tr style="{% if not loc.IsActive %}opacity:0.5{% endif %}">
+            <td data-label="Location">
+              <strong style="color:{% if loc.IsActive %}var(--pv-text){% else %}var(--pv-muted){% endif %}">
+                {{ loc.LocationName }}
+              </strong>
+            </td>
+            <td data-label="Description" style="color:var(--pv-muted);font-size:0.85rem">
+              {{ loc.Description or '—' }}
+            </td>
+            <td data-label="Capacity" style="text-align:center">
+              {{ loc.Capacity if loc.Capacity else '—' }}
+            </td>
+            <td data-label="In Storage" style="text-align:center">
+              <span style="font-weight:600;color:{% if loc.ParcelsInStorage > 0 %}var(--pv-accent){% else %}var(--pv-muted){% endif %}">
+                {{ loc.ParcelsInStorage }}
+              </span>
+            </td>
+            <td data-label="Status" style="text-align:center">
+              {% if loc.IsActive %}
+                <span class="badge-status badge-in-storage">Active</span>
+              {% else %}
+                <span class="badge-status badge-damaged">Inactive</span>
+              {% endif %}
+            </td>
+            <td style="text-align:right">
+              <form method="post" style="display:inline">
+                <input type="hidden" name="location_id" value="{{ loc.LocationID }}">
+                {% if loc.IsActive %}
+                  <input type="hidden" name="action" value="deactivate">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2"
+                          onclick="return confirm('Deactivate this location?')">
+                    <i class="bi bi-dash-circle"></i>
+                  </button>
+                {% else %}
+                  <input type="hidden" name="action" value="activate">
+                  <button type="submit" class="btn btn-sm btn-outline-secondary py-0 px-2">
+                    <i class="bi bi-check-circle"></i>
+                  </button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

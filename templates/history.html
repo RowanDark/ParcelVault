@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – History{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-clock-history"></i>Audit History</div>
+
+<!-- Filters -->
+<form method="get" class="pv-filter-bar">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-sm-6 col-md-3">
+      <label class="form-label">Search</label>
+      <input type="text" class="form-control form-control-sm" name="search"
+             value="{{ filters.search }}" placeholder="Tracking #, recipient, user">
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">Action</label>
+      <select class="form-select form-select-sm" name="action">
+        <option value="">All</option>
+        {% for a in actions %}
+          <option value="{{ a }}" {% if filters.action == a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">From</label>
+      <input type="date" class="form-control form-control-sm" name="date_from"
+             value="{{ filters.date_from }}">
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">To</label>
+      <input type="date" class="form-control form-control-sm" name="date_to"
+             value="{{ filters.date_to }}">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i></button>
+      <a href="{{ url_for('history') }}" class="btn btn-outline-secondary btn-sm ms-1">
+        <i class="bi bi-x"></i>
+      </a>
+    </div>
+    <div class="col-auto ms-auto">
+      <a href="{{ url_for('export_csv') }}" class="btn btn-sm pv-btn-export">
+        <i class="bi bi-download me-1"></i>Export CSV
+      </a>
+    </div>
+  </div>
+</form>
+
+<!-- History table -->
+<div class="pv-table-wrap">
+  {% if records %}
+  <div style="overflow-x:auto">
+    <table class="pv-table">
+      <thead>
+        <tr>
+          <th>Date / Time</th>
+          <th>Action</th>
+          <th>Tracking #</th>
+          <th>Carrier</th>
+          <th>Recipient</th>
+          <th>Location</th>
+          <th>User</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in records %}
+        <tr>
+          <td data-label="Date" style="white-space:nowrap;font-size:0.83rem;color:var(--pv-muted)">
+            {{ r.ActionDate[:16] if r.ActionDate else '—' }}
+          </td>
+          <td data-label="Action">
+            {% if r.Action == 'Received' %}
+              <span style="color:#5ab2f7">{{ r.Action }}</span>
+            {% elif r.Action == 'Delivered' %}
+              <span style="color:#3dd68c">{{ r.Action }}</span>
+            {% elif r.Action == 'Batch Received' %}
+              <span style="color:#a78bfa">{{ r.Action }}</span>
+            {% else %}
+              <span style="color:var(--pv-muted)">{{ r.Action }}</span>
+            {% endif %}
+          </td>
+          <td data-label="Tracking #">
+            <code style="color:var(--pv-accent);font-size:0.83rem">{{ r.TrackingNumber }}</code>
+          </td>
+          <td data-label="Carrier" style="font-size:0.88rem">{{ r.Shipper or '—' }}</td>
+          <td data-label="Recipient" style="font-size:0.88rem">{{ r.Recipient or '—' }}</td>
+          <td data-label="Location" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.LocationName or '—' }}</td>
+          <td data-label="User" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.PerformedBy or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="px-3 py-2" style="color:var(--pv-muted);font-size:0.8rem">
+    Showing {{ records|length }} record(s){% if records|length == 500 %} (limit 500 — use Export CSV for full data){% endif %}
+  </div>
+  {% else %}
+  <div class="pv-empty">
+    <i class="bi bi-clock"></i>
+    No history records match your filters.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
