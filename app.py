@@ -7,7 +7,9 @@ Access & SharePoint Implementation Guide v1.0.
 import csv
 import getpass
 import io
+import json
 import os
+import re
 import sqlite3
 from datetime import datetime
 
@@ -99,6 +101,79 @@ def index():
                            pending=counts.get('Pending', 0),
                            damaged=counts.get('Damaged', 0),
                            total=total)
+
+
+# ── Camera scan API ───────────────────────────────────────────
+
+@app.route('/api/scan-package', methods=['POST'])
+def scan_package():
+    api_key = os.environ.get('ANTHROPIC_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY is not configured on the server.'}), 500
+
+    body = request.get_json(silent=True) or {}
+    image_data = body.get('image', '')
+    if not image_data:
+        return jsonify({'error': 'No image provided.'}), 400
+
+    # Strip data URL prefix (e.g. "data:image/jpeg;base64,...")
+    media_type = 'image/jpeg'
+    if ',' in image_data:
+        header, image_data = image_data.split(',', 1)
+        if 'png' in header:
+            media_type = 'image/png'
+        elif 'webp' in header:
+            media_type = 'image/webp'
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model='claude-sonnet-4-6',
+            max_tokens=256,
+            messages=[{
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'image',
+                        'source': {
+                            'type': 'base64',
+                            'media_type': media_type,
+                            'data': image_data,
+                        },
+                    },
+                    {
+                        'type': 'text',
+                        'text': (
+                            'Extract shipping label data from this image. '
+                            'Return ONLY a JSON object with these exact keys: '
+                            '"tracking_number" (the primary tracking or barcode number), '
+                            '"carrier" (one of: UPS, FedEx, USPS, Amazon, DHL, Other), '
+                            '"recipient" (addressee full name or company). '
+                            'Use an empty string for any field not visible. '
+                            'Example: {"tracking_number":"1Z999AA10123456784","carrier":"UPS","recipient":"John Smith"}'
+                        ),
+                    },
+                ],
+            }],
+        )
+
+        text = msg.content[0].text.strip()
+        match = re.search(r'\{.*?\}', text, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+        else:
+            result = {'tracking_number': '', 'carrier': 'Other', 'recipient': ''}
+
+        carrier = result.get('carrier', 'Other')
+        if carrier not in CARRIERS:
+            carrier = 'Other'
+        result['carrier'] = carrier
+
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
 
 
 # ── Real-time duplicate check API ─────────────────────────────

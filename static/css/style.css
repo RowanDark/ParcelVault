@@ -286,6 +286,26 @@ label { color: var(--pv-muted); font-size: 0.85rem; font-weight: 500; }
 .detail-label { color: var(--pv-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
 .detail-value { color: var(--pv-text); font-size: 0.95rem; margin-bottom: 1rem; }
 
+/* ── Camera scan panel ───────────────────────────────────── */
+.pv-divider {
+  border-color: var(--pv-border);
+  opacity: 1;
+}
+
+.scan-preview-img {
+  max-height: 160px;
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--pv-border);
+  object-fit: contain;
+  background: #000;
+}
+
+.scan-filled {
+  border-color: var(--pv-info) !important;
+  box-shadow: 0 0 0 3px rgba(43, 137, 204, 0.25) !important;
+}
+
 /* ── Responsive tweaks ───────────────────────────────────── */
 @media (max-width: 768px) {
   .stat-count { font-size: 1.8rem; }

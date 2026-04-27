@@ -99,6 +99,111 @@
 })();
 
 
+// ── Camera scan ────────────────────────────────────────────
+(function () {
+  const triggerBtn = document.getElementById('scan-trigger-btn');
+  if (!triggerBtn) return;
+
+  const fileInput   = document.getElementById('scan-file-input');
+  const statusEl    = document.getElementById('scan-status');
+  const previewWrap = document.getElementById('scan-preview-wrap');
+  const previewImg  = document.getElementById('scan-preview');
+
+  triggerBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async function () {
+    const file = this.files[0];
+    if (!file) return;
+
+    previewImg.src = URL.createObjectURL(file);
+    previewWrap.style.display = 'block';
+
+    const b64 = await compressToJpeg(file, 1200, 0.85);
+
+    triggerBtn.disabled = true;
+    setStatus('Scanning label…', 'text-muted');
+
+    try {
+      const res  = await fetch('/api/scan-package', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ image: b64 }),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        setStatus('Scan failed: ' + data.error, 'text-danger');
+        return;
+      }
+
+      let filled = 0;
+      if (data.tracking_number) { fillField('tracking_number', data.tracking_number); filled++; }
+      if (data.carrier)         { fillSelect('shipper', data.carrier); filled++; }
+      if (data.recipient)       { fillField('recipient', data.recipient); filled++; }
+
+      const tnField = document.getElementById('tracking_number');
+      if (tnField) tnField.dispatchEvent(new Event('input'));
+
+      setStatus(
+        filled ? 'Label scanned — review the fields below.' : 'No data detected — enter details manually.',
+        filled ? 'text-success' : 'text-warning'
+      );
+    } catch (_) {
+      setStatus('Network error. Please try again.', 'text-danger');
+    } finally {
+      triggerBtn.disabled = false;
+      fileInput.value = '';
+    }
+  });
+
+  function setStatus(msg, cls) {
+    statusEl.textContent   = msg;
+    statusEl.className     = 'small ' + cls;
+    statusEl.style.display = 'inline';
+  }
+
+  function fillField(id, value) {
+    const el = document.getElementById(id);
+    if (!el || !value) return;
+    el.value = value;
+    el.classList.add('scan-filled');
+    setTimeout(() => el.classList.remove('scan-filled'), 3000);
+  }
+
+  function fillSelect(id, value) {
+    const el = document.getElementById(id);
+    if (!el || !value) return;
+    const v = value.toLowerCase();
+    for (const opt of el.options) {
+      if (opt.value.toLowerCase() === v || v.includes(opt.value.toLowerCase())) {
+        el.value = opt.value;
+        el.classList.add('scan-filled');
+        setTimeout(() => el.classList.remove('scan-filled'), 3000);
+        return;
+      }
+    }
+  }
+
+  function compressToJpeg(file, maxDim, quality) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else       { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL('image/jpeg', quality));
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+})();
+
+
 // ── Auto-dismiss success alerts after 4 s ────────────────────
 document.querySelectorAll('.pv-alert-success').forEach(function (el) {
   setTimeout(function () {

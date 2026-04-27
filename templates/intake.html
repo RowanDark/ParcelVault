@@ -7,6 +7,22 @@
 <div class="row justify-content-center">
   <div class="col-lg-7">
     <div class="pv-card">
+
+      <!-- Camera scan panel -->
+      <div class="scan-panel mb-3">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <button type="button" id="scan-trigger-btn" class="btn btn-outline-info btn-sm px-3">
+            <i class="bi bi-camera-fill me-1"></i>Scan Package Label
+          </button>
+          <span id="scan-status" class="small" style="display:none"></span>
+        </div>
+        <div id="scan-preview-wrap" style="display:none" class="mt-2">
+          <img id="scan-preview" alt="Captured label" class="scan-preview-img">
+        </div>
+        <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none">
+      </div>
+      <hr class="pv-divider mb-4">
+
       <form method="post" novalidate>
 
         <div class="mb-3">
