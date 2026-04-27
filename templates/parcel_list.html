@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – All Parcels{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-list-ul"></i>All Parcels</div>
+
+<!-- Filter bar -->
+<form method="get" class="pv-filter-bar">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-sm-6 col-md-3">
+      <label class="form-label">Search</label>
+      <input type="text" class="form-control form-control-sm" name="search"
+             value="{{ filters.search }}" placeholder="Tracking # or recipient">
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">Status</label>
+      <select class="form-select form-select-sm" name="status">
+        <option value="">All</option>
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">Carrier</label>
+      <select class="form-select form-select-sm" name="carrier">
+        <option value="">All</option>
+        {% for c in carriers %}
+          <option value="{{ c }}" {% if filters.carrier == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">Location</label>
+      <select class="form-select form-select-sm" name="location">
+        <option value="">All</option>
+        {% for loc in locations %}
+          <option value="{{ loc.LocationID }}"
+            {% if filters.location|string == loc.LocationID|string %}selected{% endif %}>
+            {{ loc.LocationName }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-sm-3 col-md-2">
+      <label class="form-label">From</label>
+      <input type="date" class="form-control form-control-sm" name="date_from"
+             value="{{ filters.date_from }}">
+    </div>
+    <div class="col-6 col-sm-3 col-md-1">
+      <label class="form-label">To</label>
+      <input type="date" class="form-control form-control-sm" name="date_to"
+             value="{{ filters.date_to }}">
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-search"></i>
+      </button>
+      <a href="{{ url_for('parcel_list') }}" class="btn btn-outline-secondary btn-sm ms-1">
+        <i class="bi bi-x"></i>
+      </a>
+    </div>
+  </div>
+</form>
+
+<!-- Results -->
+<div class="pv-table-wrap">
+  {% if parcels %}
+  <div style="overflow-x:auto">
+    <table class="pv-table">
+      <thead>
+        <tr>
+          <th>Tracking #</th>
+          <th>Carrier</th>
+          <th>Recipient</th>
+          <th>Location</th>
+          <th>Received</th>
+          <th>Status</th>
+          <th style="text-align:right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in parcels %}
+        <tr onclick="window.location='{{ url_for('parcel_detail', parcel_id=p.ParcelID) }}'">
+          <td data-label="Tracking #">
+            <code style="color:var(--pv-accent);font-size:0.85rem">{{ p.TrackingNumber }}</code>
+          </td>
+          <td data-label="Carrier">{{ p.Shipper }}</td>
+          <td data-label="Recipient">{{ p.Recipient }}</td>
+          <td data-label="Location">{{ p.LocationName or '—' }}</td>
+          <td data-label="Received">{{ p.ReceivedDate[:16] if p.ReceivedDate else '—' }}</td>
+          <td data-label="Status">
+            {% set sl = p.Status | lower | replace(' ', '-') %}
+            <span class="badge-status badge-{{ sl }}">{{ p.Status }}</span>
+          </td>
+          <td style="text-align:right" onclick="event.stopPropagation()">
+            {% if p.Status != 'Delivered' %}
+            <a href="{{ url_for('deliver', parcel_id=p.ParcelID) }}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2"
+               title="Deliver">
+              <i class="bi bi-truck"></i>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('parcel_detail', parcel_id=p.ParcelID) }}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1"
+               title="View detail">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="px-3 py-2" style="color:var(--pv-muted);font-size:0.8rem">
+    {{ parcels|length }} record(s) shown
+  </div>
+  {% else %}
+  <div class="pv-empty">
+    <i class="bi bi-inbox"></i>
+    No parcels match your filters.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

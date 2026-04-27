@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – Home{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-box-seam-fill"></i>ParcelVault Dashboard</div>
+
+<!-- Stats row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="pv-card h-100 d-flex justify-content-between align-items-center">
+      <div>
+        <div class="pv-card-title">In Storage</div>
+        <div class="stat-count">{{ in_storage }}</div>
+        <div class="stat-label">packages waiting</div>
+      </div>
+      <i class="bi bi-inbox-fill stat-icon text-info"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="pv-card h-100 d-flex justify-content-between align-items-center">
+      <div>
+        <div class="pv-card-title">Delivered</div>
+        <div class="stat-count">{{ delivered }}</div>
+        <div class="stat-label">packages delivered</div>
+      </div>
+      <i class="bi bi-check2-circle stat-icon text-success"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="pv-card h-100 d-flex justify-content-between align-items-center">
+      <div>
+        <div class="pv-card-title">Pending</div>
+        <div class="stat-count">{{ pending }}</div>
+        <div class="stat-label">awaiting action</div>
+      </div>
+      <i class="bi bi-hourglass-split stat-icon text-warning"></i>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="pv-card h-100 d-flex justify-content-between align-items-center">
+      <div>
+        <div class="pv-card-title">Total Records</div>
+        <div class="stat-count">{{ total }}</div>
+        <div class="stat-label">all time</div>
+      </div>
+      <i class="bi bi-bar-chart-fill stat-icon" style="color:var(--pv-accent)"></i>
+    </div>
+  </div>
+</div>
+
+<!-- Navigation hub -->
+<div class="row g-3">
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('intake') }}" class="hub-btn">
+      <i class="bi bi-plus-circle-fill"></i>
+      <span>Receive Parcel</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('batch_intake') }}" class="hub-btn">
+      <i class="bi bi-stack"></i>
+      <span>Batch Intake</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('parcel_list') }}" class="hub-btn">
+      <i class="bi bi-list-ul"></i>
+      <span>View All Parcels</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('parcel_list') }}?status=In+Storage" class="hub-btn">
+      <i class="bi bi-truck"></i>
+      <span>Deliver Parcel</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('locations') }}" class="hub-btn">
+      <i class="bi bi-geo-alt-fill"></i>
+      <span>Locations</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('history') }}" class="hub-btn">
+      <i class="bi bi-clock-history"></i>
+      <span>History</span>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-lg-3">
+    <a href="{{ url_for('export_csv') }}" class="hub-btn">
+      <i class="bi bi-file-earmark-spreadsheet"></i>
+      <span>Export CSV</span>
+    </a>
+  </div>
+</div>
+{% endblock %}
