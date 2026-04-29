@@ -21,7 +21,7 @@ DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'parcelvault
 
 CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'DHL', 'Other']
 STATUSES = ['In Storage', 'Delivered', 'Pending', 'Damaged']
-ACTIONS  = ['Received', 'Delivered', 'Batch Received', 'Modified']
+ACTIONS  = ['Received', 'Delivered', 'Batch Received', 'Batch Delivered', 'Modified']
 
 # ── Database helpers ──────────────────────────────────────────
 
@@ -387,6 +387,76 @@ def deliver(parcel_id):
         return redirect(url_for('parcel_list'))
 
     return render_template('deliver.html', parcel=parcel)
+
+
+# ── Batch delivery (frm_BatchDeliver) ────────────────────────
+
+@app.route('/batch-deliver', methods=['GET', 'POST'])
+def batch_deliver():
+    db = get_db()
+
+    if request.method == 'POST':
+        parcel_ids = request.form.getlist('parcel_ids')
+        signed_by  = request.form.get('signed_by', '').strip() \
+                     or f'Batch ({get_username()})'
+
+        if not parcel_ids:
+            flash('No parcels selected.', 'warning')
+            return redirect(url_for('batch_deliver'))
+
+        delivered = 0
+        skipped   = []
+        now       = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        for pid in parcel_ids:
+            try:
+                pid_int = int(pid)
+            except (ValueError, TypeError):
+                continue
+            parcel = db.execute(
+                'SELECT * FROM tbl_Parcels WHERE ParcelID = ?', (pid_int,)
+            ).fetchone()
+            if not parcel:
+                continue
+            if parcel['Status'] == 'Delivered':
+                skipped.append(parcel['TrackingNumber'])
+                continue
+            db.execute(
+                """UPDATE tbl_Parcels
+                   SET Status = 'Delivered', DeliveredDate = ?, DeliveredTo = ?
+                   WHERE ParcelID = ?""",
+                (now, signed_by, pid_int),
+            )
+            log_history(db, 'Batch Delivered', parcel['TrackingNumber'],
+                        parcel['Shipper'], signed_by, parcel['LocationID'])
+            delivered += 1
+
+        db.commit()
+
+        if delivered:
+            msg = f'{delivered} parcel(s) marked as delivered.'
+            if skipped:
+                shown = skipped[:5]
+                extra = len(skipped) - len(shown)
+                msg += (f' {len(skipped)} already delivered (skipped): '
+                        f'{", ".join(shown)}{"…" if extra > 0 else ""}.')
+            flash(msg, 'success' if not skipped else 'warning')
+        elif skipped:
+            flash(f'All {len(skipped)} selected parcel(s) were already delivered.', 'warning')
+        else:
+            flash('No parcels could be delivered.', 'error')
+
+        return redirect(url_for('batch_deliver'))
+
+    parcels = db.execute(
+        """SELECT p.ParcelID, p.TrackingNumber, p.Shipper, p.Recipient,
+                  l.LocationName, p.ReceivedDate, p.Status
+           FROM tbl_Parcels p
+           LEFT JOIN tbl_Locations l ON p.LocationID = l.LocationID
+           WHERE p.Status != 'Delivered'
+           ORDER BY p.ReceivedDate DESC"""
+    ).fetchall()
+    return render_template('batch_deliver.html', parcels=parcels)
 
 
 # ── Storage locations (frm_Locations) ─────────────────────────

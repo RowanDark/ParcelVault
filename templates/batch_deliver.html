@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – Batch Deliver{% endblock %}
+
+{% block content %}
+<div class="pv-page-title"><i class="bi bi-truck"></i>Batch Deliver</div>
+
+<div class="pv-card">
+  <!-- Toolbar -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <h6 class="text-white mb-0">
+        Deliverable Parcels
+        <span class="badge bg-secondary ms-1">{{ parcels|length }}</span>
+      </h6>
+      <span id="sel-badge" class="badge bg-primary d-none">0 selected</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-select-all">
+        <i class="bi bi-check-all me-1"></i>Select All
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-deselect-all">
+        <i class="bi bi-square me-1"></i>Deselect All
+      </button>
+      <button type="button" class="btn btn-primary btn-sm" id="btn-batch-deliver" disabled
+              data-bs-toggle="modal" data-bs-target="#confirmModal">
+        <i class="bi bi-truck me-1"></i>Batch Deliver (<span id="sel-count">0</span>)
+      </button>
+    </div>
+  </div>
+
+  {% if parcels %}
+  <div style="overflow-x:auto">
+    <table class="pv-table" id="deliver-table">
+      <thead>
+        <tr>
+          <th style="width:2.5rem">
+            <input type="checkbox" class="form-check-input" id="chk-all" title="Toggle all">
+          </th>
+          <th>Tracking #</th>
+          <th>Carrier</th>
+          <th>Recipient</th>
+          <th>Location</th>
+          <th>Received</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in parcels %}
+        <tr class="parcel-row" style="cursor:pointer">
+          <td onclick="event.stopPropagation()">
+            <input type="checkbox" class="form-check-input parcel-chk"
+                   value="{{ p.ParcelID }}"
+                   data-recipient="{{ p.Recipient | e }}">
+          </td>
+          <td data-label="Tracking #">
+            <code style="color:var(--pv-accent);font-size:0.85rem">{{ p.TrackingNumber }}</code>
+          </td>
+          <td data-label="Carrier">{{ p.Shipper }}</td>
+          <td data-label="Recipient">{{ p.Recipient }}</td>
+          <td data-label="Location">{{ p.LocationName or '—' }}</td>
+          <td data-label="Received">{{ p.ReceivedDate[:16] if p.ReceivedDate else '—' }}</td>
+          <td data-label="Status">
+            {% set sl = p.Status | lower | replace(' ', '-') %}
+            <span class="badge-status badge-{{ sl }}">{{ p.Status }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="px-3 py-2" style="color:var(--pv-muted);font-size:0.8rem">
+    {{ parcels|length }} deliverable parcel(s) shown
+  </div>
+  {% else %}
+  <div class="pv-empty">
+    <i class="bi bi-check2-circle"></i>
+    No deliverable parcels — all packages have been delivered.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Confirmation modal -->
+<div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:var(--pv-navy-card);border-color:var(--pv-border)">
+      <div class="modal-header" style="border-color:var(--pv-border)">
+        <h5 class="modal-title text-white" id="confirmModalLabel">
+          <i class="bi bi-truck me-2" style="color:var(--pv-accent)"></i>Confirm Batch Delivery
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-white mb-2">
+          Mark <strong id="modal-count">0</strong> package(s) as delivered?
+        </p>
+        <div id="modal-recipients" class="mb-3" style="color:var(--pv-muted);font-size:0.85rem"></div>
+        <div>
+          <label class="form-label text-white">
+            Signed by
+            <span style="color:var(--pv-muted);font-size:0.8rem">(optional — defaults to current user)</span>
+          </label>
+          <input type="text" class="form-control form-control-sm" id="modal-signed-by"
+                 placeholder="Recipient name or staff member">
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--pv-border)">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-deliver">
+          <i class="bi bi-check2 me-1"></i>Confirm Delivery
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden form submitted on confirmation -->
+<form id="deliver-form" method="post" action="{{ url_for('batch_deliver') }}" style="display:none">
+  <input type="hidden" name="signed_by" id="form-signed-by">
+  <div id="form-ids"></div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var chkAll     = document.getElementById('chk-all');
+  var selBadge   = document.getElementById('sel-badge');
+  var selCount   = document.getElementById('sel-count');
+  var btnDeliver = document.getElementById('btn-batch-deliver');
+  var btnConfirm = document.getElementById('btn-confirm-deliver');
+  var modalCount = document.getElementById('modal-count');
+  var modalRecip = document.getElementById('modal-recipients');
+  var modalSigned= document.getElementById('modal-signed-by');
+
+  function getChecked() {
+    return Array.prototype.slice.call(document.querySelectorAll('.parcel-chk:checked'));
+  }
+
+  function updateUI() {
+    var checked = getChecked();
+    var n = checked.length;
+    var all = document.querySelectorAll('.parcel-chk');
+    selCount.textContent = n;
+    if (n > 0) {
+      selBadge.textContent = n + ' selected';
+      selBadge.classList.remove('d-none');
+      btnDeliver.disabled = false;
+    } else {
+      selBadge.classList.add('d-none');
+      btnDeliver.disabled = true;
+    }
+    chkAll.indeterminate = n > 0 && n < all.length;
+    chkAll.checked = all.length > 0 && n === all.length;
+  }
+
+  // Row click toggles checkbox
+  Array.prototype.forEach.call(document.querySelectorAll('.parcel-row'), function (row) {
+    row.addEventListener('click', function (e) {
+      if (e.target.type === 'checkbox') return;
+      var chk = row.querySelector('.parcel-chk');
+      chk.checked = !chk.checked;
+      updateUI();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.parcel-chk'), function (chk) {
+    chk.addEventListener('change', updateUI);
+  });
+
+  document.getElementById('btn-select-all').addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.parcel-chk'), function (c) { c.checked = true; });
+    updateUI();
+  });
+
+  document.getElementById('btn-deselect-all').addEventListener('click', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.parcel-chk'), function (c) { c.checked = false; });
+    updateUI();
+  });
+
+  chkAll.addEventListener('change', function () {
+    Array.prototype.forEach.call(document.querySelectorAll('.parcel-chk'), function (c) { c.checked = chkAll.checked; });
+    updateUI();
+  });
+
+  // Populate modal summary before it opens
+  document.getElementById('confirmModal').addEventListener('show.bs.modal', function () {
+    var checked = getChecked();
+    modalCount.textContent = checked.length;
+    modalSigned.value = '';
+
+    var recipients = [];
+    var seen = {};
+    checked.forEach(function (c) {
+      var r = c.dataset.recipient;
+      if (r && !seen[r]) { seen[r] = true; recipients.push(r); }
+    });
+    if (recipients.length) {
+      var shown = recipients.slice(0, 5);
+      var extra = recipients.length - shown.length;
+      var html = '<strong>Recipients:</strong> ' + shown.join(', ');
+      if (extra > 0) html += ' <em>+' + extra + ' more</em>';
+      modalRecip.innerHTML = html;
+    } else {
+      modalRecip.innerHTML = '';
+    }
+  });
+
+  // Submit hidden form on confirm
+  btnConfirm.addEventListener('click', function () {
+    var checked = getChecked();
+    document.getElementById('form-signed-by').value = modalSigned.value.trim();
+    var idsDiv = document.getElementById('form-ids');
+    idsDiv.innerHTML = '';
+    checked.forEach(function (chk) {
+      var inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'parcel_ids';
+      inp.value = chk.value;
+      idsDiv.appendChild(inp);
+    });
+    document.getElementById('deliver-form').submit();
+  });
+}());
+</script>
+{% endblock %}
