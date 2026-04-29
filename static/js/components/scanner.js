@@ -136,6 +136,7 @@
   var _scanLoopHandle = null;
   var _html5Scanner = null;
   var _lastScanAt = 0;
+  var _startupTimeoutHandle = null;
   var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0, startAt: 0, firstDecodeMs: null, lastFormat: '-' };
 
   function _safeBind(id, event, handler) {
@@ -160,7 +161,11 @@
     _safeBind('pv-use-btn', 'click', _applyResults);
 
     _safeBind('pv-scanner-modal', 'hidden.bs.modal', _stopCamera);
-    _safeBind('pv-scanner-modal', 'shown.bs.modal', function () { setTimeout(_startCamera, 60); });
+    _safeBind('pv-scanner-modal', 'shown.bs.modal', function () {
+      requestAnimationFrame(function () {
+        setTimeout(_startCamera, 80);
+      });
+    });
   }
 
   // ── Public: open scanner wired to a form ─────────────────────
@@ -226,6 +231,10 @@
   }
 
   function _stopCamera() {
+    if (_startupTimeoutHandle) {
+      clearTimeout(_startupTimeoutHandle);
+      _startupTimeoutHandle = null;
+    }
     if (_scanLoopHandle) {
       cancelAnimationFrame(_scanLoopHandle);
       _scanLoopHandle = null;
@@ -286,13 +295,34 @@
   function _beginHtml5Loop() {
     var video = document.getElementById('pv-scan-video');
     var status = document.getElementById('pv-barcode-status');
+    var container = document.getElementById('pv-scan-preview');
     if (!window.Html5Qrcode || !video) { _showError('html5-qrcode is not available.'); return; }
+    if (!container) { _showError('Scanner container is missing.'); return; }
+
+    var rect = container.getBoundingClientRect();
+    console.info('[Scanner] scanner init start');
+    console.info('[Scanner] container dimensions', { width: Math.round(rect.width), height: Math.round(rect.height) });
+    if (rect.width <= 0 || rect.height <= 0) {
+      _showError('Scanner container is not ready (invalid dimensions).');
+      return;
+    }
+
     _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
     if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
     _html5Scanner = new Html5Qrcode('pv-scan-video');
     var formats = [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX];
-    _html5Scanner.start({ facingMode: 'environment' }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
+    var settled = false;
+
+    if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
+    _startupTimeoutHandle = setTimeout(function () {
+      if (settled) return;
+      console.error('[Scanner] start() timed out after 5 seconds');
+      _showError('Scanner failed to initialize');
+    }, 5000);
+
+    console.info('[Scanner] start() invocation');
+    _html5Scanner.start({ facingMode: { ideal: 'environment' } }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
       function (decodedText, decodedResult) {
         _diag.attempts += 1; _diag.successes += 1;
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
@@ -304,7 +334,16 @@
         });
       },
       function () { _diag.failures += 1; _updateDebugOverlay('decode-failed'); }
-    ).catch(function (err) { _showError('Failed to start html5-qrcode scanner: ' + err); });
+    ).then(function () {
+      settled = true;
+      if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
+      console.info('[Scanner] start() resolution');
+    }).catch(function (err) {
+      settled = true;
+      if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
+      console.error('[Scanner] start() rejection', err);
+      _showError('Failed to start html5-qrcode scanner: ' + err);
+    });
   }
 
   function _captureAndApplyCandidate(candidate) {
