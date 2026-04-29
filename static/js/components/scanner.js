@@ -142,6 +142,16 @@
   var SCANNER_ENGINE_KEY = 'pv-scanner-engine';
   var _scannerEngine = 'zxing';
 
+  function _safeBind(id, event, handler) {
+    var el = document.getElementById(id);
+    if (!el) {
+      console.warn('Missing element: ' + id);
+      return null;
+    }
+    el.addEventListener(event, handler);
+    return el;
+  }
+
   // ── Bootstrap the modal DOM once ────────────────────────────
   function _init() {
     if (document.getElementById('pv-scanner-modal')) return;
@@ -149,17 +159,17 @@
     wrap.innerHTML = MODAL_HTML;
     document.body.appendChild(wrap);
 
-    document.getElementById('pv-capture-btn').addEventListener('click', _captureFrame);
-    document.getElementById('pv-retake-btn').addEventListener('click', _resetToPreview);
-    document.getElementById('pv-use-btn').addEventListener('click', _applyResults);
-    document.getElementById('pv-test-pipeline-btn').addEventListener('click', _runPipelineTest);
-    document.getElementById('pv-scanner-engine').addEventListener('change', function (e) {
+    _safeBind('pv-capture-btn', 'click', _captureFrame);
+    _safeBind('pv-retake-btn', 'click', _resetToPreview);
+    _safeBind('pv-use-btn', 'click', _applyResults);
+    _safeBind('pv-test-pipeline-btn', 'click', _runPipelineTest);
+    _safeBind('pv-scanner-engine', 'change', function (e) {
       _scannerEngine = e.target.value || 'zxing';
       sessionStorage.setItem(SCANNER_ENGINE_KEY, _scannerEngine);
       _updateDebugOverlay('engine-changed');
     });
 
-    document.getElementById('pv-scanner-modal').addEventListener('hidden.bs.modal', _stopCamera);
+    _safeBind('pv-scanner-modal', 'hidden.bs.modal', _stopCamera);
   }
 
   // ── Public: open scanner wired to a form ─────────────────────
@@ -168,7 +178,8 @@
     _fieldConfig = fieldConfig || {};
     _init();
     _scannerEngine = sessionStorage.getItem(SCANNER_ENGINE_KEY) || 'zxing';
-    document.getElementById('pv-scanner-engine').value = _scannerEngine;
+    var engineSelect = document.getElementById('pv-scanner-engine');
+    if (engineSelect) engineSelect.value = _scannerEngine;
     _startCamera();
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
