@@ -47,6 +47,8 @@
     '              <div><strong>Resolution:</strong> <span id="pv-debug-resolution">-</span></div>',
     '              <div><strong>Scan FPS:</strong> <span id="pv-debug-fps">0</span></div>',
     '              <div><strong>Formats:</strong> <span id="pv-debug-formats">-</span></div>',
+    '              <div><strong>Engine:</strong> <span id="pv-debug-engine">-</span></div>',
+    '              <div><strong>TTFD:</strong> <span id="pv-debug-ttfd">-</span></div>',
     '              <div><strong>Status:</strong> <span id="pv-debug-status">idle</span></div>',
     '            </div>',
     '            <div class="d-flex justify-content-center gap-2">',
@@ -134,8 +136,11 @@
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
   var _scanLoopHandle = null;
+  var _html5Scanner = null;
   var _lastScanAt = 0;
-  var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0 };
+  var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0, startAt: 0, firstDecodeMs: null, lastFormat: '-' };
+  var SCANNER_ENGINE_KEY = 'pv-scanner-engine';
+  var _scannerEngine = 'zxing';
 
   // ── Bootstrap the modal DOM once ────────────────────────────
   function _init() {
@@ -148,6 +153,11 @@
     document.getElementById('pv-retake-btn').addEventListener('click', _resetToPreview);
     document.getElementById('pv-use-btn').addEventListener('click', _applyResults);
     document.getElementById('pv-test-pipeline-btn').addEventListener('click', _runPipelineTest);
+    document.getElementById('pv-scanner-engine').addEventListener('change', function (e) {
+      _scannerEngine = e.target.value || 'zxing';
+      sessionStorage.setItem(SCANNER_ENGINE_KEY, _scannerEngine);
+      _updateDebugOverlay('engine-changed');
+    });
 
     document.getElementById('pv-scanner-modal').addEventListener('hidden.bs.modal', _stopCamera);
   }
@@ -157,6 +167,8 @@
     // fieldConfig: { tracking: 'element-id', shipper: 'element-id', recipient: 'element-id' }
     _fieldConfig = fieldConfig || {};
     _init();
+    _scannerEngine = sessionStorage.getItem(SCANNER_ENGINE_KEY) || 'zxing';
+    document.getElementById('pv-scanner-engine').value = _scannerEngine;
     _startCamera();
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
@@ -166,6 +178,9 @@
   // ── Camera lifecycle ─────────────────────────────────────────
   function _startCamera() {
     _showState('preview');
+    _diag.startAt = performance.now();
+    _diag.firstDecodeMs = null;
+    _diag.lastFormat = '-';
     var video = document.getElementById('pv-scan-video');
     navigator.mediaDevices
       .getUserMedia({
@@ -220,6 +235,10 @@
     if (_stream) {
       _stream.getTracks().forEach(function (t) { t.stop(); });
       _stream = null;
+    }
+    if (_html5Scanner && _html5Scanner.clear) {
+      _html5Scanner.clear().catch(function () {});
+      _html5Scanner = null;
     }
   }
 
@@ -297,7 +316,7 @@
     BarcodeService.decodeFromImageDataUrl(frame, {
       onAttempt: function () { _diag.attempts += 1; console.debug('[Scanner] decode attempt #' + _diag.attempts); },
       onFailure: function (reason) { _diag.failures += 1; console.debug('[Scanner] decode failure', reason); _updateDebugOverlay('decode-failed'); },
-      onSuccess: function () { _diag.successes += 1; console.info('[Scanner] decode success #' + _diag.successes); _updateDebugOverlay('decode-success'); }
+      onSuccess: function (candidates, meta) { _diag.successes += 1; if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt); _diag.lastFormat = meta && meta.format ? meta.format : _diag.lastFormat; console.info('[Scanner] decode success #' + _diag.successes); _updateDebugOverlay('decode-success'); }
     }).then(function (candidates) {
       if (!candidates || !candidates.length || !_stream) return;
       candidates = candidates.filter(function (candidate) {
@@ -311,6 +330,41 @@
       _showResults(candidates[0], null, false);
       _applyResults();
     });
+  }
+
+
+
+  function _beginHtml5Loop() {
+    var video = document.getElementById('pv-scan-video');
+    var status = document.getElementById('pv-barcode-status');
+    if (!window.Html5Qrcode || !video) { _showError('html5-qrcode is not available.'); return; }
+    _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
+    if (status) status.textContent = 'Scanning barcode with html5-qrcode…';
+    _updateDebugOverlay('html5-starting');
+    _html5Scanner = new Html5Qrcode('pv-scan-video');
+    _html5Scanner.start({ facingMode: 'environment' }, { fps: 10, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX] },
+      function (decodedText, decodedResult) {
+        _diag.attempts += 1; _diag.successes += 1;
+        if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
+        _diag.lastFormat = decodedResult && decodedResult.result && decodedResult.result.format ? decodedResult.result.format.formatName : _diag.lastFormat;
+        _updateDebugOverlay('decode-success');
+        BarcodeService.normalizeDecodedText(decodedText).then(function (candidates) {
+          if (!candidates || !candidates.length || !_stream) return;
+          _captureAndApplyCandidate(candidates[0]);
+        });
+      },
+      function () { _diag.failures += 1; _updateDebugOverlay('decode-failed'); }
+    ).catch(function (err) { _showError('Failed to start html5-qrcode scanner: ' + err); });
+  }
+
+  function _captureAndApplyCandidate(candidate) {
+    var video = document.getElementById('pv-scan-video');
+    var canvas = document.getElementById('pv-scan-canvas');
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    _capturedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    document.getElementById('pv-scan-result-img').src = _capturedDataUrl;
+    _stopCamera(); _signalScanSuccess(); _showResults(candidate, null, false); _applyResults();
   }
 
   function _signalScanSuccess() {
@@ -500,10 +554,14 @@
     var fps = document.getElementById('pv-debug-fps');
     var fmts = document.getElementById('pv-debug-formats');
     var st = document.getElementById('pv-debug-status');
+    var engine = document.getElementById('pv-debug-engine');
+    var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
     if (fmts && window.BarcodeService && window.BarcodeService.READ_FORMATS) fmts.textContent = window.BarcodeService.READ_FORMATS.join(', ');
-    if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes;
+    if (engine) engine.textContent = _scannerEngine;
+    if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
+    if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
   }
 
   function _runPipelineTest() {
