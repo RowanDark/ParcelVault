@@ -30,6 +30,7 @@
     '          <div class="pv-scanner-viewfinder">',
     '            <video id="pv-scan-video" autoplay playsinline muted></video>',
     '            <div class="pv-scan-overlay">',
+    '              <div class="pv-scan-mask"></div>',
     '              <div class="pv-scan-frame">',
     '                <div class="pv-scan-corner tl"></div>',
     '                <div class="pv-scan-corner tr"></div>',
@@ -41,6 +42,7 @@
     '          </div>',
     '          <div class="p-3 text-center">',
     '            <p class="text-secondary small mb-2">Position the shipping label within the frame for auto barcode scanning. If needed, tap Capture for OCR fallback.</p>',
+    '            <p id="pv-barcode-status" class="small text-secondary mb-2">Initializing camera…</p>',
     '            <button type="button" class="btn btn-primary px-5" id="pv-capture-btn">',
     '              <i class="bi bi-camera-fill me-2"></i>Capture',
     '            </button>',
@@ -158,13 +160,14 @@
       .getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width:  { ideal: 1280 },
-          height: { ideal: 720 },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
         },
         audio: false,
       })
       .then(function (stream) {
         _stream = stream;
+        _applyCameraOptimizations(stream);
         video.srcObject = stream;
         video.onloadedmetadata = function () {
           _beginBarcodeLoop();
@@ -176,6 +179,25 @@
           : 'Could not access camera: ' + err.message;
         _showError(msg);
       });
+  }
+
+  function _applyCameraOptimizations(stream) {
+    var track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+    if (!track || !track.getCapabilities || !track.applyConstraints) return;
+
+    var caps = track.getCapabilities();
+    var constraints = { advanced: [] };
+
+    if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
+      constraints.advanced.push({ focusMode: 'continuous' });
+    }
+
+    if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > 1) {
+      constraints.advanced.push({ zoom: Math.min(1.5, caps.zoom.max) });
+    }
+
+    if (!constraints.advanced.length) return;
+    track.applyConstraints(constraints).catch(function () {});
   }
 
   function _stopCamera() {
@@ -219,7 +241,7 @@
 
     function tick(ts) {
       if (!_stream || !video.videoWidth) return;
-      if (ts - _lastScanAt >= 250) {
+      if (ts - _lastScanAt >= 300) {
         _lastScanAt = ts;
         _scanBarcodeFrame();
       }
@@ -242,6 +264,10 @@
 
     BarcodeService.decodeFromImageDataUrl(frame).then(function (candidates) {
       if (!candidates || !candidates.length || !_stream) return;
+      candidates = candidates.filter(function (candidate) {
+        return candidate && candidate.tracking && candidate.tracking.length >= 10;
+      });
+      if (!candidates.length) return;
       _capturedDataUrl = frame;
       document.getElementById('pv-scan-result-img').src = _capturedDataUrl;
       _stopCamera();
@@ -257,7 +283,10 @@
     if (status) status.textContent = 'Barcode detected ✓';
     if (preview) {
       preview.classList.add('pv-scan-success');
-      setTimeout(function () { preview.classList.remove('pv-scan-success'); }, 600);
+      setTimeout(function () { preview.classList.remove('pv-scan-success'); }, 900);
+    }
+    if (navigator.vibrate) {
+      navigator.vibrate([120, 40, 120]);
     }
     if (navigator.vibrate) navigator.vibrate(120);
     try {

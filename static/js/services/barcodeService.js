@@ -11,8 +11,8 @@
   'use strict';
 
   var READ_FORMATS = [
-    'Code128',
     'QRCode',
+    'Code128',
     'PDF417',
     'DataMatrix',
   ];
@@ -48,11 +48,11 @@
           }
           var parsed = TrackingParser.extractTracking(raw);
           if (parsed.length) {
-            resolve(parsed);
+            resolve(_prioritizeCandidates(parsed));
             return;
           }
           var carrier = TrackingParser.detectCarrier(raw);
-          resolve(carrier ? [{ tracking: raw.replace(/\s/g, ''), carrier: carrier }] : []);
+          resolve(carrier ? _prioritizeCandidates([{ tracking: raw.replace(/\s/g, ''), carrier: carrier }]) : []);
         } catch (e) {
           resolve([]);
         }
@@ -60,6 +60,20 @@
       img.onerror = function () { resolve([]); };
       img.src = dataUrl;
     });
+  }
+
+  function _prioritizeCandidates(candidates) {
+    return (candidates || [])
+      .filter(function (cand) {
+        return cand && cand.tracking && cand.tracking.replace(/\s/g, '').length >= 10;
+      })
+      .sort(function (a, b) {
+        var carrierRank = { UPS: 0, FedEx: 1, USPS: 2, DHL: 3, Amazon: 4 };
+        var rankA = carrierRank[a.carrier] !== undefined ? carrierRank[a.carrier] : 9;
+        var rankB = carrierRank[b.carrier] !== undefined ? carrierRank[b.carrier] : 9;
+        if (rankA !== rankB) return rankA - rankB;
+        return (b.tracking || '').length - (a.tracking || '').length;
+      });
   }
 
   return {
