@@ -444,3 +444,5 @@ label { color: var(--pv-muted); font-size: 0.85rem; font-weight: 500; }
     font-size: 0.75rem;
   }
 }
+
+#pv-scan-preview.pv-scan-success .pv-scan-frame { box-shadow: 0 0 0 3px #16a34a inset; }
