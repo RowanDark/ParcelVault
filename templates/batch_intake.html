@@ -9,19 +9,27 @@
   <!-- Add row form -->
   <div class="col-lg-5">
     <div class="pv-card">
-      <h6 class="text-white mb-3"><i class="bi bi-plus-circle me-1" style="color:var(--pv-accent)"></i>Add to Staging</h6>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="text-white mb-0">
+          <i class="bi bi-plus-circle me-1" style="color:var(--pv-accent)"></i>Add to Staging
+        </h6>
+        <button type="button" class="btn btn-sm pv-btn-scan" id="batch-scan-btn"
+                title="Scan label with camera">
+          <i class="bi bi-camera me-1"></i>Scan Label
+        </button>
+      </div>
       <form method="post" novalidate>
         <input type="hidden" name="action" value="add">
 
         <div class="mb-2">
           <label class="form-label">Tracking Number <span class="text-danger">*</span></label>
-          <input type="text" class="form-control form-control-sm" name="tracking_number"
+          <input type="text" class="form-control form-control-sm" id="batch_tracking" name="tracking_number"
                  placeholder="Scan or type" autocomplete="off" autofocus>
         </div>
 
         <div class="mb-2">
           <label class="form-label">Carrier</label>
-          <select class="form-select form-select-sm" name="shipper">
+          <select class="form-select form-select-sm" id="batch_shipper" name="shipper">
             {% for c in carriers %}
               <option value="{{ c }}">{{ c }}</option>
             {% endfor %}
@@ -30,7 +38,7 @@
 
         <div class="mb-2">
           <label class="form-label">Recipient</label>
-          <input type="text" class="form-control form-control-sm" name="recipient"
+          <input type="text" class="form-control form-control-sm" id="batch_recipient" name="recipient"
                  placeholder="Name or department">
         </div>
 
@@ -121,4 +129,20 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="{{ url_for('static', filename='js/utils/trackingParser.js') }}"></script>
+<script src="{{ url_for('static', filename='js/services/ocrService.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/scanner.js') }}"></script>
+<script>
+  document.getElementById('batch-scan-btn').addEventListener('click', function () {
+    PvScanner.open({
+      tracking:  'batch_tracking',
+      shipper:   'batch_shipper',
+      recipient: 'batch_recipient',
+    });
+  });
+</script>
 {% endblock %}
