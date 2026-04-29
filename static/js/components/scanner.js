@@ -1,5 +1,6 @@
 /* scanner.js – camera-based label scanner component
- * Depends on: TrackingParser (trackingParser.js), OcrService (ocrService.js),
+ * Depends on: TrackingParser (trackingParser.js), BarcodeService (barcodeService.js),
+ *             OcrService (ocrService.js),
  *             Bootstrap 5 (modal), Tesseract.js (CDN).
  *
  * Public API (attached to window):
@@ -39,7 +40,7 @@
     '            </div>',
     '          </div>',
     '          <div class="p-3 text-center">',
-    '            <p class="text-secondary small mb-2">Position the shipping label within the frame, then tap Capture.</p>',
+    '            <p class="text-secondary small mb-2">Position the shipping label within the frame for auto barcode scanning. If needed, tap Capture for OCR fallback.</p>',
     '            <button type="button" class="btn btn-primary px-5" id="pv-capture-btn">',
     '              <i class="bi bi-camera-fill me-2"></i>Capture',
     '            </button>',
@@ -121,6 +122,8 @@
   var _stream         = null;
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
+  var _scanLoopHandle = null;
+  var _lastScanAt = 0;
 
   // ── Bootstrap the modal DOM once ────────────────────────────
   function _init() {
@@ -163,6 +166,9 @@
       .then(function (stream) {
         _stream = stream;
         video.srcObject = stream;
+        video.onloadedmetadata = function () {
+          _beginBarcodeLoop();
+        };
       })
       .catch(function (err) {
         var msg = err.name === 'NotAllowedError'
@@ -173,6 +179,10 @@
   }
 
   function _stopCamera() {
+    if (_scanLoopHandle) {
+      cancelAnimationFrame(_scanLoopHandle);
+      _scanLoopHandle = null;
+    }
     if (_stream) {
       _stream.getTracks().forEach(function (t) { t.stop(); });
       _stream = null;
@@ -201,7 +211,68 @@
     _runOcr();
   }
 
-  // ── OCR pipeline ─────────────────────────────────────────────
+  
+
+  function _beginBarcodeLoop() {
+    var video = document.getElementById('pv-scan-video');
+    var status = document.getElementById('pv-barcode-status');
+
+    function tick(ts) {
+      if (!_stream || !video.videoWidth) return;
+      if (ts - _lastScanAt >= 250) {
+        _lastScanAt = ts;
+        _scanBarcodeFrame();
+      }
+      _scanLoopHandle = requestAnimationFrame(tick);
+    }
+
+    if (status) status.textContent = 'Scanning barcode…';
+    _scanLoopHandle = requestAnimationFrame(tick);
+  }
+
+  function _scanBarcodeFrame() {
+    var video = document.getElementById('pv-scan-video');
+    var canvas = document.getElementById('pv-scan-canvas');
+    if (!video.videoWidth || !BarcodeService) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    var frame = canvas.toDataURL('image/jpeg', 0.85);
+
+    BarcodeService.decodeFromImageDataUrl(frame).then(function (candidates) {
+      if (!candidates || !candidates.length || !_stream) return;
+      _capturedDataUrl = frame;
+      document.getElementById('pv-scan-result-img').src = _capturedDataUrl;
+      _stopCamera();
+      _signalScanSuccess();
+      _showResults(candidates[0], null, false);
+      _applyResults();
+    });
+  }
+
+  function _signalScanSuccess() {
+    var preview = document.getElementById('pv-scan-preview');
+    var status = document.getElementById('pv-barcode-status');
+    if (status) status.textContent = 'Barcode detected ✓';
+    if (preview) {
+      preview.classList.add('pv-scan-success');
+      setTimeout(function () { preview.classList.remove('pv-scan-success'); }, 600);
+    }
+    if (navigator.vibrate) navigator.vibrate(120);
+    try {
+      var ac = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 1046;
+      gain.gain.value = 0.03;
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start();
+      setTimeout(function () { osc.stop(); ac.close(); }, 90);
+    } catch (_) {}
+  }
+// ── OCR pipeline ─────────────────────────────────────────────
   function _runOcr() {
     _showState('processing');
     var progressBar = document.getElementById('pv-ocr-progress');
