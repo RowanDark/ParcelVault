@@ -43,9 +43,18 @@
     '          <div class="p-3 text-center">',
     '            <p class="text-secondary small mb-2">Position the shipping label within the frame for auto barcode scanning. If needed, tap Capture for OCR fallback.</p>',
     '            <p id="pv-barcode-status" class="small text-secondary mb-2">Initializing camera…</p>',
+    '            <div id="pv-debug-overlay" class="small text-start border rounded p-2 mb-2 bg-light">',
+    '              <div><strong>Resolution:</strong> <span id="pv-debug-resolution">-</span></div>',
+    '              <div><strong>Scan FPS:</strong> <span id="pv-debug-fps">0</span></div>',
+    '              <div><strong>Formats:</strong> <span id="pv-debug-formats">-</span></div>',
+    '              <div><strong>Status:</strong> <span id="pv-debug-status">idle</span></div>',
+    '            </div>',
+    '            <div class="d-flex justify-content-center gap-2">',
+    '            <button type="button" class="btn btn-outline-secondary" id="pv-test-pipeline-btn">Test QR Pipeline</button>',
     '            <button type="button" class="btn btn-primary px-5" id="pv-capture-btn">',
     '              <i class="bi bi-camera-fill me-2"></i>Capture',
     '            </button>',
+    '            </div>',
     '          </div>',
     '        </div>',
 
@@ -126,6 +135,7 @@
   var _fieldConfig    = null;
   var _scanLoopHandle = null;
   var _lastScanAt = 0;
+  var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0 };
 
   // ── Bootstrap the modal DOM once ────────────────────────────
   function _init() {
@@ -137,6 +147,7 @@
     document.getElementById('pv-capture-btn').addEventListener('click', _captureFrame);
     document.getElementById('pv-retake-btn').addEventListener('click', _resetToPreview);
     document.getElementById('pv-use-btn').addEventListener('click', _applyResults);
+    document.getElementById('pv-test-pipeline-btn').addEventListener('click', _runPipelineTest);
 
     document.getElementById('pv-scanner-modal').addEventListener('hidden.bs.modal', _stopCamera);
   }
@@ -170,7 +181,8 @@
         _applyCameraOptimizations(stream);
         video.srcObject = stream;
         video.onloadedmetadata = function () {
-          _beginBarcodeLoop();
+          _updateDebugOverlay('metadata-loaded');
+          _waitForVideoReady(video, _beginBarcodeLoop);
         };
       })
       .catch(function (err) {
@@ -235,12 +247,30 @@
 
   
 
+  function _waitForVideoReady(video, onReady) {
+    var tries = 0;
+    function check() {
+      tries += 1;
+      if (_stream && video.readyState >= 2 && video.videoWidth > 0) {
+        console.info('[Scanner] Video ready', { readyState: video.readyState, width: video.videoWidth, height: video.videoHeight });
+        _updateDebugOverlay('video-ready');
+        onReady();
+        return;
+      }
+      if (tries < 60) return setTimeout(check, 100);
+      _showError('Video initialization failed (readyState/dimensions invalid).');
+    }
+    check();
+  }
+
   function _beginBarcodeLoop() {
     var video = document.getElementById('pv-scan-video');
     var status = document.getElementById('pv-barcode-status');
 
     function tick(ts) {
       if (!_stream || !video.videoWidth) return;
+      _diag.frames += 1;
+      if (ts - _diag.lastFpsAt >= 1000) { _diag.fps = _diag.frames; _diag.frames = 0; _diag.lastFpsAt = ts; _updateDebugOverlay('scanning'); }
       if (ts - _lastScanAt >= 300) {
         _lastScanAt = ts;
         _scanBarcodeFrame();
@@ -248,7 +278,9 @@
       _scanLoopHandle = requestAnimationFrame(tick);
     }
 
+    _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
     if (status) status.textContent = 'Scanning barcode…';
+    _updateDebugOverlay('scanning');
     _scanLoopHandle = requestAnimationFrame(tick);
   }
 
@@ -262,12 +294,16 @@
     canvas.getContext('2d').drawImage(video, 0, 0);
     var frame = canvas.toDataURL('image/jpeg', 0.85);
 
-    BarcodeService.decodeFromImageDataUrl(frame).then(function (candidates) {
+    BarcodeService.decodeFromImageDataUrl(frame, {
+      onAttempt: function () { _diag.attempts += 1; console.debug('[Scanner] decode attempt #' + _diag.attempts); },
+      onFailure: function (reason) { _diag.failures += 1; console.debug('[Scanner] decode failure', reason); _updateDebugOverlay('decode-failed'); },
+      onSuccess: function () { _diag.successes += 1; console.info('[Scanner] decode success #' + _diag.successes); _updateDebugOverlay('decode-success'); }
+    }).then(function (candidates) {
       if (!candidates || !candidates.length || !_stream) return;
       candidates = candidates.filter(function (candidate) {
         return candidate && candidate.tracking && candidate.tracking.length >= 10;
       });
-      if (!candidates.length) return;
+      if (!candidates.length) { _updateDebugOverlay('no-candidate'); return; }
       _capturedDataUrl = frame;
       document.getElementById('pv-scan-result-img').src = _capturedDataUrl;
       _stopCamera();
@@ -455,6 +491,43 @@
     document.getElementById('pv-retake-btn').style.display = 'none';
     document.getElementById('pv-use-btn').style.display    = 'none';
     _startCamera();
+  }
+
+
+  function _updateDebugOverlay(status) {
+    var video = document.getElementById('pv-scan-video');
+    var res = document.getElementById('pv-debug-resolution');
+    var fps = document.getElementById('pv-debug-fps');
+    var fmts = document.getElementById('pv-debug-formats');
+    var st = document.getElementById('pv-debug-status');
+    if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
+    if (fps) fps.textContent = String(_diag.fps || 0);
+    if (fmts && window.BarcodeService && window.BarcodeService.READ_FORMATS) fmts.textContent = window.BarcodeService.READ_FORMATS.join(', ');
+    if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes;
+  }
+
+  function _runPipelineTest() {
+    var qr = 'https://raw.githubusercontent.com/zxing/zxing/master/core/src/test/resources/blackbox/qrcode-1/1.png';
+    var c128 = 'https://raw.githubusercontent.com/zxing/zxing/master/core/src/test/resources/blackbox/code128-1/1.png';
+    _updateDebugOverlay('pipeline-test-running');
+    Promise.all([_decodeFromUrl(qr), _decodeFromUrl(c128)]).then(function (results) {
+      console.info('[Scanner] Pipeline test results', results);
+      var ok = results[0] && results[0].length;
+      document.getElementById('pv-barcode-status').textContent = ok ? 'QR test image decoded successfully ✓' : 'QR test decode failed';
+      _updateDebugOverlay(ok ? 'pipeline-test-pass' : 'pipeline-test-fail');
+    });
+  }
+
+  function _decodeFromUrl(url) {
+    return fetch(url).then(function (r) { return r.blob(); }).then(function (b) {
+      return new Promise(function (resolve) {
+        var fr = new FileReader();
+        fr.onload = function () {
+          BarcodeService.decodeFromImageDataUrl(fr.result).then(resolve);
+        };
+        fr.readAsDataURL(b);
+      });
+    }).catch(function () { return []; });
   }
 
   function _esc(s) {

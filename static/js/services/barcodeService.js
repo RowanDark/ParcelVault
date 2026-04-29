@@ -27,7 +27,7 @@
     return hints;
   }
 
-  function decodeFromImageDataUrl(dataUrl) {
+  function decodeFromImageDataUrl(dataUrl, options) {
     return new Promise(function (resolve) {
       if (!TrackingParser || !window.ZXingBrowser || !window.ZXing) {
         resolve([]);
@@ -37,27 +37,38 @@
       var zxBrowser = window.ZXingBrowser;
       var zx = window.ZXing;
       var reader = new zxBrowser.BrowserMultiFormatReader(_buildHints(zx));
+      var onAttempt = options && typeof options.onAttempt === 'function' ? options.onAttempt : null;
+      var onFailure = options && typeof options.onFailure === 'function' ? options.onFailure : null;
+      var onSuccess = options && typeof options.onSuccess === 'function' ? options.onSuccess : null;
       var img = new Image();
       img.onload = function () {
         try {
+          if (onAttempt) onAttempt();
           var result = reader.decodeFromImageElement(img);
           var raw = result && result.getText ? result.getText() : '';
           if (!raw) {
+            if (onFailure) onFailure('empty-result');
             resolve([]);
             return;
           }
           var parsed = TrackingParser.extractTracking(raw);
           if (parsed.length) {
-            resolve(_prioritizeCandidates(parsed));
+            var prioritized = _prioritizeCandidates(parsed);
+            if (onSuccess) onSuccess(prioritized);
+            resolve(prioritized);
             return;
           }
           var carrier = TrackingParser.detectCarrier(raw);
-          resolve(carrier ? _prioritizeCandidates([{ tracking: raw.replace(/\s/g, ''), carrier: carrier }]) : []);
+          var normalized = carrier ? _prioritizeCandidates([{ tracking: raw.replace(/\s/g, ''), carrier: carrier }]) : [];
+          if (normalized.length && onSuccess) onSuccess(normalized);
+          if (!normalized.length && onFailure) onFailure('unparsed-result');
+          resolve(normalized);
         } catch (e) {
+          if (onFailure) onFailure(e && e.message ? e.message : 'decode-exception');
           resolve([]);
         }
       };
-      img.onerror = function () { resolve([]); };
+      img.onerror = function () { if (onFailure) onFailure('image-load-error'); resolve([]); };
       img.src = dataUrl;
     });
   }
