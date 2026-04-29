@@ -47,12 +47,10 @@
     '              <div><strong>Resolution:</strong> <span id="pv-debug-resolution">-</span></div>',
     '              <div><strong>Scan FPS:</strong> <span id="pv-debug-fps">0</span></div>',
     '              <div><strong>Formats:</strong> <span id="pv-debug-formats">-</span></div>',
-    '              <div><strong>Engine:</strong> <span id="pv-debug-engine">-</span></div>',
     '              <div><strong>TTFD:</strong> <span id="pv-debug-ttfd">-</span></div>',
     '              <div><strong>Status:</strong> <span id="pv-debug-status">idle</span></div>',
     '            </div>',
     '            <div class="d-flex justify-content-center gap-2">',
-    '            <button type="button" class="btn btn-outline-secondary" id="pv-test-pipeline-btn">Test QR Pipeline</button>',
     '            <button type="button" class="btn btn-primary px-5" id="pv-capture-btn">',
     '              <i class="bi bi-camera-fill me-2"></i>Capture',
     '            </button>',
@@ -139,8 +137,6 @@
   var _html5Scanner = null;
   var _lastScanAt = 0;
   var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0, startAt: 0, firstDecodeMs: null, lastFormat: '-' };
-  var SCANNER_ENGINE_KEY = 'pv-scanner-engine';
-  var _scannerEngine = 'zxing';
 
   function _safeBind(id, event, handler) {
     var el = document.getElementById(id);
@@ -162,14 +158,9 @@
     _safeBind('pv-capture-btn', 'click', _captureFrame);
     _safeBind('pv-retake-btn', 'click', _resetToPreview);
     _safeBind('pv-use-btn', 'click', _applyResults);
-    _safeBind('pv-test-pipeline-btn', 'click', _runPipelineTest);
-    _safeBind('pv-scanner-engine', 'change', function (e) {
-      _scannerEngine = e.target.value || 'zxing';
-      sessionStorage.setItem(SCANNER_ENGINE_KEY, _scannerEngine);
-      _updateDebugOverlay('engine-changed');
-    });
 
     _safeBind('pv-scanner-modal', 'hidden.bs.modal', _stopCamera);
+    _safeBind('pv-scanner-modal', 'shown.bs.modal', function () { setTimeout(_startCamera, 60); });
   }
 
   // ── Public: open scanner wired to a form ─────────────────────
@@ -177,10 +168,6 @@
     // fieldConfig: { tracking: 'element-id', shipper: 'element-id', recipient: 'element-id' }
     _fieldConfig = fieldConfig || {};
     _init();
-    _scannerEngine = sessionStorage.getItem(SCANNER_ENGINE_KEY) || 'zxing';
-    var engineSelect = document.getElementById('pv-scanner-engine');
-    if (engineSelect) engineSelect.value = _scannerEngine;
-    _startCamera();
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
     ).show();
@@ -208,7 +195,7 @@
         video.srcObject = stream;
         video.onloadedmetadata = function () {
           _updateDebugOverlay('metadata-loaded');
-          _waitForVideoReady(video, _beginBarcodeLoop);
+          _waitForVideoReady(video, _beginHtml5Loop);
         };
       })
       .catch(function (err) {
@@ -247,9 +234,11 @@
       _stream.getTracks().forEach(function (t) { t.stop(); });
       _stream = null;
     }
-    if (_html5Scanner && _html5Scanner.clear) {
-      _html5Scanner.clear().catch(function () {});
-      _html5Scanner = null;
+    if (_html5Scanner && _html5Scanner.stop) {
+      _html5Scanner.stop().catch(function () {}).finally(function () {
+        if (_html5Scanner && _html5Scanner.clear) _html5Scanner.clear().catch(function () {});
+        _html5Scanner = null;
+      });
     }
   }
 
@@ -293,67 +282,17 @@
     check();
   }
 
-  function _beginBarcodeLoop() {
-    var video = document.getElementById('pv-scan-video');
-    var status = document.getElementById('pv-barcode-status');
-
-    function tick(ts) {
-      if (!_stream || !video.videoWidth) return;
-      _diag.frames += 1;
-      if (ts - _diag.lastFpsAt >= 1000) { _diag.fps = _diag.frames; _diag.frames = 0; _diag.lastFpsAt = ts; _updateDebugOverlay('scanning'); }
-      if (ts - _lastScanAt >= 300) {
-        _lastScanAt = ts;
-        _scanBarcodeFrame();
-      }
-      _scanLoopHandle = requestAnimationFrame(tick);
-    }
-
-    _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
-    if (status) status.textContent = 'Scanning barcode…';
-    _updateDebugOverlay('scanning');
-    _scanLoopHandle = requestAnimationFrame(tick);
-  }
-
-  function _scanBarcodeFrame() {
-    var video = document.getElementById('pv-scan-video');
-    var canvas = document.getElementById('pv-scan-canvas');
-    if (!video.videoWidth || !BarcodeService) return;
-
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    var frame = canvas.toDataURL('image/jpeg', 0.85);
-
-    BarcodeService.decodeFromImageDataUrl(frame, {
-      onAttempt: function () { _diag.attempts += 1; console.debug('[Scanner] decode attempt #' + _diag.attempts); },
-      onFailure: function (reason) { _diag.failures += 1; console.debug('[Scanner] decode failure', reason); _updateDebugOverlay('decode-failed'); },
-      onSuccess: function (candidates, meta) { _diag.successes += 1; if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt); _diag.lastFormat = meta && meta.format ? meta.format : _diag.lastFormat; console.info('[Scanner] decode success #' + _diag.successes); _updateDebugOverlay('decode-success'); }
-    }).then(function (candidates) {
-      if (!candidates || !candidates.length || !_stream) return;
-      candidates = candidates.filter(function (candidate) {
-        return candidate && candidate.tracking && candidate.tracking.length >= 10;
-      });
-      if (!candidates.length) { _updateDebugOverlay('no-candidate'); return; }
-      _capturedDataUrl = frame;
-      document.getElementById('pv-scan-result-img').src = _capturedDataUrl;
-      _stopCamera();
-      _signalScanSuccess();
-      _showResults(candidates[0], null, false);
-      _applyResults();
-    });
-  }
-
-
 
   function _beginHtml5Loop() {
     var video = document.getElementById('pv-scan-video');
     var status = document.getElementById('pv-barcode-status');
     if (!window.Html5Qrcode || !video) { _showError('html5-qrcode is not available.'); return; }
     _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
-    if (status) status.textContent = 'Scanning barcode with html5-qrcode…';
+    if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
     _html5Scanner = new Html5Qrcode('pv-scan-video');
-    _html5Scanner.start({ facingMode: 'environment' }, { fps: 10, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX] },
+    var formats = [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX];
+    _html5Scanner.start({ facingMode: 'environment' }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
       function (decodedText, decodedResult) {
         _diag.attempts += 1; _diag.successes += 1;
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
@@ -565,38 +504,12 @@
     var fps = document.getElementById('pv-debug-fps');
     var fmts = document.getElementById('pv-debug-formats');
     var st = document.getElementById('pv-debug-status');
-    var engine = document.getElementById('pv-debug-engine');
     var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
-    if (fmts && window.BarcodeService && window.BarcodeService.READ_FORMATS) fmts.textContent = window.BarcodeService.READ_FORMATS.join(', ');
-    if (engine) engine.textContent = _scannerEngine;
+    if (fmts) fmts.textContent = 'QR_CODE, CODE_128, PDF_417, DATA_MATRIX';
     if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
     if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
-  }
-
-  function _runPipelineTest() {
-    var qr = 'https://raw.githubusercontent.com/zxing/zxing/master/core/src/test/resources/blackbox/qrcode-1/1.png';
-    var c128 = 'https://raw.githubusercontent.com/zxing/zxing/master/core/src/test/resources/blackbox/code128-1/1.png';
-    _updateDebugOverlay('pipeline-test-running');
-    Promise.all([_decodeFromUrl(qr), _decodeFromUrl(c128)]).then(function (results) {
-      console.info('[Scanner] Pipeline test results', results);
-      var ok = results[0] && results[0].length;
-      document.getElementById('pv-barcode-status').textContent = ok ? 'QR test image decoded successfully ✓' : 'QR test decode failed';
-      _updateDebugOverlay(ok ? 'pipeline-test-pass' : 'pipeline-test-fail');
-    });
-  }
-
-  function _decodeFromUrl(url) {
-    return fetch(url).then(function (r) { return r.blob(); }).then(function (b) {
-      return new Promise(function (resolve) {
-        var fr = new FileReader();
-        fr.onload = function () {
-          BarcodeService.decodeFromImageDataUrl(fr.result).then(resolve);
-        };
-        fr.readAsDataURL(b);
-      });
-    }).catch(function () { return []; });
   }
 
   function _esc(s) {
