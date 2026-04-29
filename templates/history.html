@@ -45,54 +45,78 @@
   </div>
 </form>
 
-<!-- History table -->
+<!-- History grouped by date -->
 <div class="pv-table-wrap">
-  {% if records %}
-  <div style="overflow-x:auto">
-    <table class="pv-table">
-      <thead>
-        <tr>
-          <th>Date / Time</th>
-          <th>Action</th>
-          <th>Tracking #</th>
-          <th>Carrier</th>
-          <th>Recipient</th>
-          <th>Location</th>
-          <th>User</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in records %}
-        <tr>
-          <td data-label="Date" style="white-space:nowrap;font-size:0.83rem;color:var(--pv-muted)">
-            {{ r.ActionDate[:16] if r.ActionDate else '—' }}
-          </td>
-          <td data-label="Action">
-            {% if r.Action == 'Received' %}
-              <span style="color:#5ab2f7">{{ r.Action }}</span>
-            {% elif r.Action == 'Delivered' %}
-              <span style="color:#3dd68c">{{ r.Action }}</span>
-            {% elif r.Action == 'Batch Received' %}
-              <span style="color:#a78bfa">{{ r.Action }}</span>
-            {% else %}
-              <span style="color:var(--pv-muted)">{{ r.Action }}</span>
-            {% endif %}
-          </td>
-          <td data-label="Tracking #">
-            <code style="color:var(--pv-accent);font-size:0.83rem">{{ r.TrackingNumber }}</code>
-          </td>
-          <td data-label="Carrier" style="font-size:0.88rem">{{ r.Shipper or '—' }}</td>
-          <td data-label="Recipient" style="font-size:0.88rem">{{ r.Recipient or '—' }}</td>
-          <td data-label="Location" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.LocationName or '—' }}</td>
-          <td data-label="User" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.PerformedBy or '—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="px-3 py-2" style="color:var(--pv-muted);font-size:0.8rem">
-    Showing {{ records|length }} record(s){% if records|length == 500 %} (limit 500 — use Export CSV for full data){% endif %}
-  </div>
+  {% if grouped %}
+
+    {% for group in grouped %}
+    {# Default: today expanded, older entries collapsed #}
+    {% set expanded = group.is_today %}
+    {% set collapse_id = 'pv-dg-' ~ loop.index %}
+
+    <div class="pv-date-header"
+         role="button"
+         tabindex="0"
+         data-bs-toggle="collapse"
+         data-bs-target="#{{ collapse_id }}"
+         aria-expanded="{{ 'true' if expanded else 'false' }}"
+         aria-controls="{{ collapse_id }}"
+         data-date-key="{{ group.date_key }}">
+      <i class="bi bi-chevron-right pv-dg-chevron"></i>
+      <span class="pv-dg-label">{{ group.label }}</span>
+      <span class="pv-dg-count">{{ group.records|length }}</span>
+    </div>
+
+    <div class="collapse {% if expanded %}show{% endif %}" id="{{ collapse_id }}">
+      <div style="overflow-x:auto">
+        <table class="pv-table">
+          <thead>
+            <tr>
+              <th>Date / Time</th>
+              <th>Action</th>
+              <th>Tracking #</th>
+              <th>Carrier</th>
+              <th>Recipient</th>
+              <th>Location</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in group.records %}
+            <tr>
+              <td data-label="Date" style="white-space:nowrap;font-size:0.83rem;color:var(--pv-muted)">
+                {{ r.ActionDate[:16] if r.ActionDate else '—' }}
+              </td>
+              <td data-label="Action">
+                {% if r.Action == 'Received' %}
+                  <span style="color:#5ab2f7">{{ r.Action }}</span>
+                {% elif r.Action == 'Delivered' %}
+                  <span style="color:#3dd68c">{{ r.Action }}</span>
+                {% elif r.Action == 'Batch Received' %}
+                  <span style="color:#a78bfa">{{ r.Action }}</span>
+                {% else %}
+                  <span style="color:var(--pv-muted)">{{ r.Action }}</span>
+                {% endif %}
+              </td>
+              <td data-label="Tracking #">
+                <code style="color:var(--pv-accent);font-size:0.83rem">{{ r.TrackingNumber }}</code>
+              </td>
+              <td data-label="Carrier" style="font-size:0.88rem">{{ r.Shipper or '—' }}</td>
+              <td data-label="Recipient" style="font-size:0.88rem">{{ r.Recipient or '—' }}</td>
+              <td data-label="Location" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.LocationName or '—' }}</td>
+              <td data-label="User" style="font-size:0.83rem;color:var(--pv-muted)">{{ r.PerformedBy or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="px-3 py-2" style="color:var(--pv-muted);font-size:0.8rem">
+      Showing {{ total }} record(s) across {{ grouped|length }} day(s){% if total == 500 %} (limit 500 — use Export CSV for full data){% endif %}
+    </div>
+
   {% else %}
   <div class="pv-empty">
     <i class="bi bi-clock"></i>

@@ -499,6 +499,47 @@ def locations():
     return render_template('locations.html', locations=locs)
 
 
+# ── History date-grouping helper ─────────────────────────────
+
+def _group_records_by_date(records, today):
+    """Return records bucketed by calendar day, newest first.
+
+    Each bucket: {'date_key': 'YYYY-MM-DD', 'label': 'Month D, YYYY',
+                  'is_today': bool, 'records': [...]}
+    """
+    from itertools import groupby as _groupby
+
+    def _date_key(r):
+        return (r['ActionDate'] or '')[:10] or 'unknown'
+
+    def _label(key):
+        if not key or key == 'unknown':
+            return 'Unknown'
+        try:
+            return datetime.strptime(key, '%Y-%m-%d').strftime('%-d %B %Y').lstrip('0') \
+                   or datetime.strptime(key, '%Y-%m-%d').strftime('%B %-d, %Y')
+        except ValueError:
+            return key
+
+    def _friendly(key):
+        if not key or key == 'unknown':
+            return 'Unknown'
+        try:
+            return datetime.strptime(key, '%Y-%m-%d').strftime('%B %-d, %Y')
+        except ValueError:
+            return key
+
+    grouped = []
+    for key, group_iter in _groupby(records, key=_date_key):
+        grouped.append({
+            'date_key': key,
+            'label':    _friendly(key),
+            'is_today': key == today,
+            'records':  list(group_iter),
+        })
+    return grouped
+
+
 # ── Audit history ─────────────────────────────────────────────
 
 @app.route('/history')
@@ -527,7 +568,12 @@ def history():
 
     query += ' ORDER BY h.ActionDate DESC LIMIT 500'
     records = db.execute(query, params).fetchall()
-    return render_template('history.html', records=records, actions=ACTIONS,
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    grouped = _group_records_by_date(records, today)
+
+    return render_template('history.html', grouped=grouped, total=len(records),
+                           actions=ACTIONS, today=today,
                            filters=dict(search=search, action=action_f,
                                         date_from=date_from, date_to=date_to))
 
