@@ -10,7 +10,15 @@
       <form method="post" novalidate>
 
         <div class="mb-3">
-          <label for="tracking_number" class="form-label">Tracking Number <span class="text-danger">*</span></label>
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label for="tracking_number" class="form-label mb-0">
+              Tracking Number <span class="text-danger">*</span>
+            </label>
+            <button type="button" class="btn btn-sm pv-btn-scan" id="scan-label-btn"
+                    title="Scan label with camera">
+              <i class="bi bi-camera me-1"></i>Scan Label
+            </button>
+          </div>
           <input type="text" class="form-control" id="tracking_number" name="tracking_number"
                  value="{{ form.get('tracking_number', '') }}"
                  placeholder="Scan barcode or type manually" autofocus autocomplete="off">
@@ -74,4 +82,20 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="{{ url_for('static', filename='js/utils/trackingParser.js') }}"></script>
+<script src="{{ url_for('static', filename='js/services/ocrService.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/scanner.js') }}"></script>
+<script>
+  document.getElementById('scan-label-btn').addEventListener('click', function () {
+    PvScanner.open({
+      tracking:  'tracking_number',
+      shipper:   'shipper',
+      recipient: 'recipient',
+    });
+  });
+</script>
 {% endblock %}
