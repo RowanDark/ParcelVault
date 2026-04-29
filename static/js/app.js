@@ -99,6 +99,60 @@
 })();
 
 
+// ── History: persist date-group collapse state in sessionStorage ──
+(function () {
+  const headers = document.querySelectorAll('.pv-date-header[data-date-key]');
+  if (!headers.length) return;
+
+  const STORAGE_KEY = 'pv-history-collapsed';
+  let saved = {};
+  try { saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}'); } catch (_) {}
+
+  // Apply saved states before the page settles (override server defaults)
+  headers.forEach(function (header) {
+    const dateKey  = header.dataset.dateKey;
+    const targetId = header.dataset.bsTarget;
+    if (!dateKey || !(dateKey in saved) || !targetId) return;
+    const target = document.querySelector(targetId);
+    if (!target) return;
+    const shouldCollapse = saved[dateKey];
+    if (shouldCollapse) {
+      target.classList.remove('show');
+      header.setAttribute('aria-expanded', 'false');
+    } else {
+      target.classList.add('show');
+      header.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  // Persist whenever Bootstrap fires its collapse events
+  function persistState(collapseEl, isCollapsed) {
+    const id     = '#' + collapseEl.id;
+    const header = document.querySelector('[data-bs-target="' + id + '"]');
+    if (!header) return;
+    const dateKey = header.dataset.dateKey;
+    if (!dateKey) return;
+    saved[dateKey] = isCollapsed;
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch (_) {}
+  }
+
+  document.querySelectorAll('[id^="pv-dg-"]').forEach(function (el) {
+    el.addEventListener('shown.bs.collapse',  function () { persistState(this, false); });
+    el.addEventListener('hidden.bs.collapse', function () { persistState(this, true);  });
+  });
+
+  // Allow keyboard activation (Enter / Space) on header divs
+  headers.forEach(function (header) {
+    header.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        header.click();
+      }
+    });
+  });
+})();
+
+
 // ── Auto-dismiss success alerts after 4 s ────────────────────
 document.querySelectorAll('.pv-alert-success').forEach(function (el) {
   setTimeout(function () {
