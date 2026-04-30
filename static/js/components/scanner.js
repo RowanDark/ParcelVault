@@ -254,7 +254,15 @@
     if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
     _html5Scanner = new Html5Qrcode('pv-scan-reader');
-    var formats = [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX];
+    var formats = [
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.PDF_417,
+      Html5QrcodeSupportedFormats.DATA_MATRIX,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.ITF,
+      Html5QrcodeSupportedFormats.EAN_13,
+    ];
     var settled = false;
 
     if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
@@ -265,7 +273,7 @@
     }, 5000);
 
     console.info('[Scanner] start() invocation');
-    _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
+    _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var w = Math.floor(vw * 0.85); var h = Math.floor(vh * 0.55); return { width: w, height: h }; } },
       function (decodedText, decodedResult) {
         _diag.attempts += 1; _diag.successes += 1;
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
@@ -496,7 +504,7 @@
     var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
-    if (fmts) fmts.textContent = 'QR_CODE, CODE_128, PDF_417, DATA_MATRIX';
+    if (fmts) fmts.textContent = 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13';
     if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
     if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
   }
