@@ -13,6 +13,19 @@
 
   const LOW_CONFIDENCE_THRESHOLD = 60;
 
+  function _loadTesseract() {
+    return new Promise(function(resolve, reject) {
+      if (typeof Tesseract !== 'undefined') { resolve(); return; }
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = resolve;
+      s.onerror = function() {
+        reject(new Error('Failed to load Tesseract.js'));
+      };
+      document.head.appendChild(s);
+    });
+  }
+
   /**
    * Run OCR on an image and return extracted text with a confidence score.
    *
@@ -21,11 +34,7 @@
    * @returns {Promise<{text: string, confidence: number, isLowConfidence: boolean}>}
    */
   async function recognize(imageSource, onProgress) {
-    if (typeof Tesseract === 'undefined') {
-      throw new Error(
-        'Tesseract.js is not loaded. Check your internet connection and try again.'
-      );
-    }
+    await _loadTesseract();
 
     const { data } = await Tesseract.recognize(imageSource, 'eng', {
       logger: function (m) {

@@ -15,7 +15,16 @@ from flask import (Flask, Response, flash, g, jsonify, redirect,
                    render_template, request, url_for)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'parcelvault-dev-key-change-in-prod')
+_secret = os.environ.get('SECRET_KEY')
+if not _secret:
+    import warnings
+    warnings.warn(
+        'SECRET_KEY environment variable not set. '
+        'Using insecure fallback — set SECRET_KEY in production.',
+        stacklevel=2
+    )
+    _secret = 'parcelvault-dev-key-change-in-prod'
+app.secret_key = _secret
 
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'parcelvault.db')
 
