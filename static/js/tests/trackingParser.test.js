@@ -197,6 +197,36 @@ test('does not return an address line starting with a digit as recipient', funct
   assert(r !== '123 Main Street', 'address line should not be returned as recipient');
 });
 
+test('extracts recipient from unlabelled UPS address block (Strategy 3: zip-relative)', function () {
+  assertEqual(
+    TrackingParser.extractRecipient(
+      'JOHN SMITH\nACME CORPORATION\n123 MAIN ST STE 400\nATLANTA GA 30301\n\n1Z999AA10123456784\n\nUPS GROUND'
+    ),
+    'ACME CORPORATION'
+  );
+});
+
+test('Strategy 3: returns the name line, skipping the street line above the zip', function () {
+  assertEqual(
+    TrackingParser.extractRecipient('Jane Doe\n456 Oak Ave\nDENVER CO 80203'),
+    'Jane Doe'
+  );
+});
+
+test('extracts recipient via Strategy 4 when no zip line is present', function () {
+  assertEqual(
+    TrackingParser.extractRecipient('MARY JOHNSON\nSOME COMPANY\n1Z999AA10123456784\nUPS GROUND'),
+    'SOME COMPANY'
+  );
+});
+
+test('Strategy 4: picks last name-like line before tracking number', function () {
+  assertEqual(
+    TrackingParser.extractRecipient('ALICE BROWN\n789 ELM ST\n123456789012\nFEDEX GROUND'),
+    'ALICE BROWN'
+  );
+});
+
 // ── _isLikelyName ────────────────────────────────────────────
 console.log('\n_isLikelyName:');
 
