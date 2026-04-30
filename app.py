@@ -4,6 +4,7 @@ Flask/SQLite web app implementing the schema and business logic from the
 Access & SharePoint Implementation Guide v1.0.
 """
 
+import base64
 import csv
 import getpass
 import io
@@ -11,6 +12,7 @@ import os
 import sqlite3
 from datetime import datetime
 
+import qrcode
 from flask import (Flask, Response, flash, g, jsonify, redirect,
                    render_template, request, url_for)
 
@@ -547,6 +549,41 @@ def _group_records_by_date(records, today):
             'records':  list(group_iter),
         })
     return grouped
+
+
+# ── QR code generation ────────────────────────────────────────
+
+@app.route('/locations/<int:location_id>/qr')
+def location_qr(location_id):
+    db = get_db()
+    location = db.execute(
+        'SELECT * FROM tbl_Locations WHERE LocationID = ?',
+        (location_id,)
+    ).fetchone()
+    if not location:
+        flash('Location not found.', 'error')
+        return redirect(url_for('locations'))
+
+    payload = f'PVLOC:{location_id}'
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=12,
+        border=4,
+    )
+    qr.add_data(payload)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+    return render_template('location_qr.html',
+                           location=location,
+                           img_b64=img_b64,
+                           payload=payload)
 
 
 # ── Audit history ─────────────────────────────────────────────
