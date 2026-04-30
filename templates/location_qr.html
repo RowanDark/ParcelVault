@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – QR Code: {{ location.LocationName }}{% endblock %}
+{% block content %}
+<div class="text-center py-4" id="qr-print-area">
+  <h2 class="mb-1">{{ location.LocationName }}</h2>
+  <p class="text-secondary mb-3">Scan to confirm delivery to this location</p>
+  <img src="data:image/png;base64,{{ img_b64 }}"
+       alt="QR code for {{ location.LocationName }}"
+       style="max-width:320px;width:100%;border:2px solid #dee2e6;
+              border-radius:8px;padding:16px;background:#fff">
+  <p class="text-secondary small mt-3 mb-4">
+    <code>{{ payload }}</code>
+  </p>
+  <button class="btn btn-outline-secondary" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print
+  </button>
+  <a href="{{ url_for('locations') }}" class="btn btn-outline-secondary ms-2">
+    <i class="bi bi-arrow-left me-1"></i>Back to Locations
+  </a>
+</div>
+{% endblock %}
