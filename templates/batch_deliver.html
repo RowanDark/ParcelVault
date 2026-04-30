@@ -42,6 +42,8 @@
           <th>Location</th>
           <th>Received</th>
           <th>Status</th>
+          <th>QR Confirmed</th>
+          <th>Scan</th>
         </tr>
       </thead>
       <tbody>
@@ -51,6 +53,10 @@
             <input type="checkbox" class="form-check-input parcel-chk"
                    value="{{ p.ParcelID }}"
                    data-recipient="{{ p.Recipient | e }}">
+            <input type="hidden"
+                   name="confirmed_location_{{ p.ParcelID }}"
+                   id="confirmed-loc-{{ p.ParcelID }}"
+                   value="{{ p.LocationID }}">
           </td>
           <td data-label="Tracking #">
             <code style="color:var(--pv-accent);font-size:0.85rem">{{ p.TrackingNumber }}</code>
@@ -62,6 +68,18 @@
           <td data-label="Status">
             {% set sl = p.Status | lower | replace(' ', '-') %}
             <span class="badge-status badge-{{ sl }}">{{ p.Status }}</span>
+          </td>
+          <td data-label="QR Confirmed">
+            <span id="qr-status-{{ p.ParcelID }}"
+                  class="badge bg-secondary">Not scanned</span>
+          </td>
+          <td onclick="event.stopPropagation()">
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary scan-parcel-qr-btn"
+                    data-parcel-id="{{ p.ParcelID }}"
+                    data-tracking="{{ p.TrackingNumber }}">
+              <i class="bi bi-qr-code-scan"></i>
+            </button>
           </td>
         </tr>
         {% endfor %}
@@ -78,6 +96,26 @@
   </div>
   {% endif %}
 </div>
+
+{% if parcels %}
+<!-- Batch delivery photo (one per run) -->
+<div class="pv-card mt-3 mb-3">
+  <h6 class="mb-3">
+    <i class="bi bi-camera me-2"></i>Delivery Photo
+    <span class="text-secondary small ms-1">(one photo for entire batch)</span>
+  </h6>
+  <input type="hidden" id="batch-photo-data">
+  <div class="text-center">
+    <button type="button" class="btn btn-outline-primary" id="batch-photo-btn">
+      <i class="bi bi-camera me-2"></i>Take Delivery Photo
+    </button>
+    <img id="batch-photo-preview"
+         style="display:none;max-height:180px;border-radius:8px;
+                margin-top:12px;border:1px solid #dee2e6;
+                margin-left:auto;margin-right:auto">
+  </div>
+</div>
+{% endif %}
 
 <!-- Confirmation modal -->
 <div class="modal fade" id="confirmModal" tabindex="-1" aria-labelledby="confirmModalLabel" aria-hidden="true">
@@ -116,6 +154,7 @@
 <!-- Hidden form submitted on confirmation -->
 <form id="deliver-form" method="post" action="{{ url_for('batch_deliver') }}" style="display:none">
   <input type="hidden" name="signed_by" id="form-signed-by">
+  <input type="hidden" name="photo_data" id="form-photo-data">
   <div id="form-ids"></div>
 </form>
 {% endblock %}
@@ -153,10 +192,10 @@
     chkAll.checked = all.length > 0 && n === all.length;
   }
 
-  // Row click toggles checkbox
+  // Row click toggles checkbox (skip clicks on buttons or checkboxes)
   Array.prototype.forEach.call(document.querySelectorAll('.parcel-row'), function (row) {
     row.addEventListener('click', function (e) {
-      if (e.target.type === 'checkbox') return;
+      if (e.target.type === 'checkbox' || e.target.closest('.scan-parcel-qr-btn')) return;
       var chk = row.querySelector('.parcel-chk');
       chk.checked = !chk.checked;
       updateUI();
@@ -205,10 +244,12 @@
     }
   });
 
-  // Submit hidden form on confirm
+  // Submit hidden form on confirm — copies photo and per-parcel locations
   btnConfirm.addEventListener('click', function () {
     var checked = getChecked();
     document.getElementById('form-signed-by').value = modalSigned.value.trim();
+    var photoEl = document.getElementById('batch-photo-data');
+    document.getElementById('form-photo-data').value = photoEl ? photoEl.value : '';
     var idsDiv = document.getElementById('form-ids');
     idsDiv.innerHTML = '';
     checked.forEach(function (chk) {
@@ -217,9 +258,77 @@
       inp.name = 'parcel_ids';
       inp.value = chk.value;
       idsDiv.appendChild(inp);
+
+      var locEl = document.getElementById('confirmed-loc-' + chk.value);
+      if (locEl && locEl.value) {
+        var locInp = document.createElement('input');
+        locInp.type = 'hidden';
+        locInp.name = 'confirmed_location_' + chk.value;
+        locInp.value = locEl.value;
+        idsDiv.appendChild(locInp);
+      }
     });
     document.getElementById('deliver-form').submit();
   });
+
+  // Per-parcel QR scan buttons
+  document.querySelectorAll('.scan-parcel-qr-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var parcelId = btn.dataset.parcelId;
+      PvScanner.open({
+        mode: 'qr',
+        onResult: function (raw) {
+          var match = raw.match(/^PVLOC:(\d+)$/);
+          if (!match) {
+            alert('Invalid QR code. Please scan a ParcelVault location QR.');
+            return;
+          }
+          var locationId = match[1];
+          fetch('/api/confirm-parcel-location', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              parcel_id:   parseInt(parcelId),
+              location_id: parseInt(locationId),
+            })
+          })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.success) {
+              alert('Error: ' + data.error);
+              return;
+            }
+            document.getElementById('confirmed-loc-' + parcelId).value = locationId;
+            var badge = document.getElementById('qr-status-' + parcelId);
+            badge.className = 'badge bg-success';
+            badge.textContent = data.location_name;
+            btn.className = 'btn btn-sm btn-success scan-parcel-qr-btn';
+            btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+          })
+          .catch(function () {
+            alert('Network error confirming location. Try again.');
+          });
+        }
+      });
+    });
+  });
+
+  // Single batch photo capture
+  var photoBtnEl = document.getElementById('batch-photo-btn');
+  if (photoBtnEl) {
+    photoBtnEl.addEventListener('click', function () {
+      PvScanner.open({
+        mode: 'photo',
+        onResult: function (dataUrl) {
+          document.getElementById('batch-photo-data').value = dataUrl;
+          var prev = document.getElementById('batch-photo-preview');
+          prev.src = dataUrl;
+          prev.style.display = 'block';
+          photoBtnEl.innerHTML = '<i class="bi bi-camera me-2"></i>Retake Photo';
+        }
+      });
+    });
+  }
 }());
 </script>
 {% endblock %}
