@@ -28,7 +28,7 @@
     '        <!-- live camera preview -->',
     '        <div id="pv-scan-preview">',
     '          <div class="pv-scanner-viewfinder">',
-    '            <div id="pv-scan-reader"></div>',
+    '            <div id="pv-scan-reader" style="width:100%;min-height:300px;"></div>',
     '            <div class="pv-scan-overlay">',
     '              <div class="pv-scan-mask"></div>',
     '              <div class="pv-scan-frame">',
@@ -184,26 +184,8 @@
     _diag.startAt = performance.now();
     _diag.firstDecodeMs = null;
     _diag.lastFormat = '-';
+    _stream = true; // sentinel — signals camera is active to _captureAndApplyCandidate
     _beginHtml5Loop();
-  }
-
-  function _applyCameraOptimizations(stream) {
-    var track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
-    if (!track || !track.getCapabilities || !track.applyConstraints) return;
-
-    var caps = track.getCapabilities();
-    var constraints = { advanced: [] };
-
-    if (caps.focusMode && caps.focusMode.indexOf('continuous') !== -1) {
-      constraints.advanced.push({ focusMode: 'continuous' });
-    }
-
-    if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > 1) {
-      constraints.advanced.push({ zoom: Math.min(1.5, caps.zoom.max) });
-    }
-
-    if (!constraints.advanced.length) return;
-    track.applyConstraints(constraints).catch(function () {});
   }
 
   function _stopCamera() {
@@ -215,10 +197,10 @@
       cancelAnimationFrame(_scanLoopHandle);
       _scanLoopHandle = null;
     }
-    if (_stream) {
+    if (_stream && typeof _stream === 'object' && _stream.getTracks) {
       _stream.getTracks().forEach(function (t) { t.stop(); });
-      _stream = null;
     }
+    _stream = null;
     if (_html5Scanner && _html5Scanner.stop) {
       _html5Scanner.stop().catch(function () {}).finally(function () {
         if (_html5Scanner && _html5Scanner.clear) _html5Scanner.clear().catch(function () {});
@@ -249,36 +231,22 @@
     _runOcr();
   }
 
-  
-
-  function _waitForVideoReady(video, onReady) {
-    var tries = 0;
-    function check() {
-      tries += 1;
-      if (_stream && video.readyState >= 2 && video.videoWidth > 0) {
-        console.info('[Scanner] Video ready', { readyState: video.readyState, width: video.videoWidth, height: video.videoHeight });
-        _updateDebugOverlay('video-ready');
-        onReady();
-        return;
-      }
-      if (tries < 60) return setTimeout(check, 100);
-      _showError('Video initialization failed (readyState/dimensions invalid).');
-    }
-    check();
-  }
-
-
   function _beginHtml5Loop() {
     var status = document.getElementById('pv-barcode-status');
     var container = document.getElementById('pv-scan-preview');
     if (!window.Html5Qrcode) { _showError('html5-qrcode is not available.'); return; }
     if (!container) { _showError('Scanner container is missing.'); return; }
 
-    var rect = container.getBoundingClientRect();
+    var readerEl = document.getElementById('pv-scan-reader');
+    if (!readerEl) {
+      _showError('Scanner reader element not found.');
+      return;
+    }
+    var rect = readerEl.getBoundingClientRect();
     console.info('[Scanner] scanner init start');
-    console.info('[Scanner] container dimensions', { width: Math.round(rect.width), height: Math.round(rect.height) });
+    console.info('[Scanner] reader dimensions', { width: Math.round(rect.width), height: Math.round(rect.height) });
     if (rect.width <= 0 || rect.height <= 0) {
-      _showError('Scanner container is not ready (invalid dimensions).');
+      _showError('Scanner reader element has no dimensions — check CSS.');
       return;
     }
 
@@ -312,8 +280,6 @@
     ).then(function () {
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
-      var v = document.querySelector('#pv-scan-reader video');
-      if (v && v.srcObject) { _stream = v.srcObject; _applyCameraOptimizations(_stream); }
       console.info('[Scanner] start() resolution');
     }).catch(function (err) {
       settled = true;
@@ -325,8 +291,15 @@
 
   function _captureAndApplyCandidate(candidate) {
     var video = document.querySelector('#pv-scan-reader video');
-    if (!video) return;
     var canvas = document.getElementById('pv-scan-canvas');
+    if (!video) {
+      // No video frame to capture — apply results without a thumbnail
+      _stopCamera();
+      _signalScanSuccess();
+      _showResults(candidate, null, false);
+      _applyResults();
+      return;
+    }
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
     _capturedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
