@@ -143,6 +143,38 @@ def index():
 
 # ── Real-time duplicate check API ─────────────────────────────
 
+@app.route('/api/confirm-parcel-location', methods=['POST'])
+def confirm_parcel_location():
+    data        = request.get_json()
+    parcel_id   = data.get('parcel_id')
+    location_id = data.get('location_id')
+
+    if not parcel_id or not location_id:
+        return jsonify({'success': False,
+                        'error': 'parcel_id and location_id required'}), 400
+
+    parcel = get_db().execute(
+        'SELECT * FROM tbl_Parcels WHERE ParcelID = ?',
+        (parcel_id,)
+    ).fetchone()
+    if not parcel:
+        return jsonify({'success': False, 'error': 'Parcel not found'}), 404
+
+    loc = get_db().execute(
+        'SELECT LocationName FROM tbl_Locations WHERE LocationID = ?',
+        (location_id,)
+    ).fetchone()
+
+    return jsonify({
+        'success':       True,
+        'parcel_id':     parcel_id,
+        'location_id':   location_id,
+        'location_name': loc['LocationName'] if loc else str(location_id),
+        'tracking':      parcel['TrackingNumber'],
+        'recipient':     parcel['Recipient'],
+    })
+
+
 @app.route('/api/check-duplicate')
 def check_duplicate():
     tn = request.args.get('tn', '').strip()
@@ -450,6 +482,7 @@ def batch_deliver():
         parcel_ids = request.form.getlist('parcel_ids')
         signed_by  = request.form.get('signed_by', '').strip() \
                      or f'Batch ({get_username()})'
+        photo_data = request.form.get('photo_data', '').strip()
 
         if not parcel_ids:
             flash('No parcels selected.', 'warning')
@@ -467,19 +500,27 @@ def batch_deliver():
             parcel = db.execute(
                 'SELECT * FROM tbl_Parcels WHERE ParcelID = ?', (pid_int,)
             ).fetchone()
-            if not parcel:
+            if not parcel or parcel['Status'] == 'Delivered':
+                skipped.append(parcel['TrackingNumber'] if parcel else str(pid))
                 continue
-            if parcel['Status'] == 'Delivered':
-                skipped.append(parcel['TrackingNumber'])
-                continue
+
+            confirmed_loc = request.form.get(
+                f'confirmed_location_{pid_int}', ''
+            ).strip() or parcel['LocationID']
+
             db.execute(
                 """UPDATE tbl_Parcels
-                   SET Status = 'Delivered', DeliveredDate = ?, DeliveredTo = ?
+                   SET Status        = 'Delivered',
+                       DeliveredDate = ?,
+                       DeliveredTo   = ?,
+                       DeliveryPhoto = ?,
+                       LocationID    = ?
                    WHERE ParcelID = ?""",
-                (now, signed_by, pid_int),
+                (now, signed_by, photo_data or None,
+                 confirmed_loc, pid_int),
             )
             log_history(db, 'Batch Delivered', parcel['TrackingNumber'],
-                        parcel['Shipper'], signed_by, parcel['LocationID'])
+                        parcel['Shipper'], signed_by, confirmed_loc)
             delivered += 1
 
         db.commit()
@@ -501,7 +542,7 @@ def batch_deliver():
 
     parcels = db.execute(
         """SELECT p.ParcelID, p.TrackingNumber, p.Shipper, p.Recipient,
-                  l.LocationName, p.ReceivedDate, p.Status
+                  l.LocationName, p.ReceivedDate, p.Status, p.LocationID
            FROM tbl_Parcels p
            LEFT JOIN tbl_Locations l ON p.LocationID = l.LocationID
            WHERE p.Status != 'Delivered'
