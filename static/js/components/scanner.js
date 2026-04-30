@@ -28,7 +28,7 @@
     '        <!-- live camera preview -->',
     '        <div id="pv-scan-preview">',
     '          <div class="pv-scanner-viewfinder">',
-    '            <video id="pv-scan-video" autoplay playsinline muted></video>',
+    '            <div id="pv-scan-reader"></div>',
     '            <div class="pv-scan-overlay">',
     '              <div class="pv-scan-mask"></div>',
     '              <div class="pv-scan-frame">',
@@ -184,31 +184,7 @@
     _diag.startAt = performance.now();
     _diag.firstDecodeMs = null;
     _diag.lastFormat = '-';
-    var video = document.getElementById('pv-scan-video');
-    navigator.mediaDevices
-      .getUserMedia({
-        video: {
-          facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      })
-      .then(function (stream) {
-        _stream = stream;
-        _applyCameraOptimizations(stream);
-        video.srcObject = stream;
-        video.onloadedmetadata = function () {
-          _updateDebugOverlay('metadata-loaded');
-          _waitForVideoReady(video, _beginHtml5Loop);
-        };
-      })
-      .catch(function (err) {
-        var msg = err.name === 'NotAllowedError'
-          ? 'Camera access was denied. Please allow camera permissions and try again.'
-          : 'Could not access camera: ' + err.message;
-        _showError(msg);
-      });
+    _beginHtml5Loop();
   }
 
   function _applyCameraOptimizations(stream) {
@@ -253,10 +229,10 @@
 
   // ── Capture a frame from the video feed ──────────────────────
   function _captureFrame() {
-    var video  = document.getElementById('pv-scan-video');
+    var video  = document.querySelector('#pv-scan-reader video');
     var canvas = document.getElementById('pv-scan-canvas');
 
-    if (!video.videoWidth) {
+    if (!video || !video.videoWidth) {
       _showError('Camera is not ready yet. Please wait a moment and try again.');
       return;
     }
@@ -293,10 +269,9 @@
 
 
   function _beginHtml5Loop() {
-    var video = document.getElementById('pv-scan-video');
     var status = document.getElementById('pv-barcode-status');
     var container = document.getElementById('pv-scan-preview');
-    if (!window.Html5Qrcode || !video) { _showError('html5-qrcode is not available.'); return; }
+    if (!window.Html5Qrcode) { _showError('html5-qrcode is not available.'); return; }
     if (!container) { _showError('Scanner container is missing.'); return; }
 
     var rect = container.getBoundingClientRect();
@@ -310,7 +285,7 @@
     _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
     if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
-    _html5Scanner = new Html5Qrcode('pv-scan-video');
+    _html5Scanner = new Html5Qrcode('pv-scan-reader');
     var formats = [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.PDF_417, Html5QrcodeSupportedFormats.DATA_MATRIX];
     var settled = false;
 
@@ -329,7 +304,7 @@
         _diag.lastFormat = decodedResult && decodedResult.result && decodedResult.result.format ? decodedResult.result.format.formatName : _diag.lastFormat;
         _updateDebugOverlay('decode-success');
         BarcodeService.normalizeDecodedText(decodedText).then(function (candidates) {
-          if (!candidates || !candidates.length || !_stream) return;
+          if (!candidates || !candidates.length || !_html5Scanner) return;
           _captureAndApplyCandidate(candidates[0]);
         });
       },
@@ -337,6 +312,8 @@
     ).then(function () {
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
+      var v = document.querySelector('#pv-scan-reader video');
+      if (v && v.srcObject) { _stream = v.srcObject; _applyCameraOptimizations(_stream); }
       console.info('[Scanner] start() resolution');
     }).catch(function (err) {
       settled = true;
@@ -347,7 +324,8 @@
   }
 
   function _captureAndApplyCandidate(candidate) {
-    var video = document.getElementById('pv-scan-video');
+    var video = document.querySelector('#pv-scan-reader video');
+    if (!video) return;
     var canvas = document.getElementById('pv-scan-canvas');
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     canvas.getContext('2d').drawImage(video, 0, 0);
@@ -538,7 +516,7 @@
 
 
   function _updateDebugOverlay(status) {
-    var video = document.getElementById('pv-scan-video');
+    var video = document.querySelector('#pv-scan-reader video');
     var res = document.getElementById('pv-debug-resolution');
     var fps = document.getElementById('pv-debug-fps');
     var fmts = document.getElementById('pv-debug-formats');
