@@ -232,6 +232,10 @@
     _stream = true; // sentinel — signals camera is active to _captureAndApplyCandidate
     var statusEl = document.getElementById('pv-barcode-status');
     if (statusEl) statusEl.textContent = 'Loading scanner…';
+    if (_mode === 'photo') {
+      _startPhotoCamera();
+      return;
+    }
     _ensureLibrary()
       .then(function() {
         _beginHtml5Loop();
@@ -251,6 +255,13 @@
       cancelAnimationFrame(_scanLoopHandle);
       _scanLoopHandle = null;
     }
+    var photoVideo = document.getElementById('pv-photo-video');
+    if (photoVideo) {
+      photoVideo.srcObject = null;
+      photoVideo.remove();
+    }
+    var overlay = document.querySelector('.pv-scan-overlay');
+    if (overlay) overlay.style.display = '';
     if (_stream && typeof _stream === 'object' && _stream.getTracks) {
       _stream.getTracks().forEach(function (t) { t.stop(); });
     }
@@ -259,6 +270,69 @@
       _html5Scanner.stop().catch(function () {}).finally(function () {
         if (_html5Scanner && _html5Scanner.clear) _html5Scanner.clear().catch(function () {});
         _html5Scanner = null;
+      });
+    }
+  }
+
+  function _startPhotoCamera() {
+    _showState('preview');
+    var statusEl = document.getElementById('pv-barcode-status');
+    if (statusEl) statusEl.textContent = 'Camera ready — press Capture to take photo.';
+
+    var overlay = document.querySelector('.pv-scan-overlay');
+    if (overlay) overlay.style.display = 'none';
+
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false
+    })
+    .then(function(stream) {
+      _stream = stream;
+      var readerEl = document.getElementById('pv-scan-reader');
+      var video = document.createElement('video');
+      video.id = 'pv-photo-video';
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true;
+      video.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+      if (readerEl) {
+        readerEl.innerHTML = '';
+        readerEl.appendChild(video);
+      }
+      video.srcObject = stream;
+    })
+    .catch(function(err) {
+      var msg = err.name === 'NotAllowedError'
+        ? 'Camera access denied. Please allow camera permissions.'
+        : 'Could not access camera: ' + err.message;
+      _showError(msg);
+    });
+
+    var captureBtn = document.getElementById('pv-capture-btn');
+    if (captureBtn) {
+      captureBtn.replaceWith(captureBtn.cloneNode(true));
+      captureBtn = document.getElementById('pv-capture-btn');
+      captureBtn.addEventListener('click', function() {
+        var video = document.getElementById('pv-photo-video');
+        var canvas = document.getElementById('pv-scan-canvas');
+        if (!video || !video.videoWidth) {
+          _showError('Camera not ready. Please wait and try again.');
+          return;
+        }
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        _capturedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        _stopCamera();
+
+        if (_onResult) {
+          var cb = _onResult;
+          _onResult = null;
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById('pv-scanner-modal')
+          ).hide();
+          cb(_capturedDataUrl);
+        }
       });
     }
   }
@@ -361,7 +435,15 @@
     }, 5000);
 
     console.info('[Scanner] start() invocation');
-    _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var w = Math.floor(vw * 0.85); var h = Math.floor(vh * 0.55); return { width: w, height: h }; } },
+    _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function(vw, vh) {
+        if (_mode === 'qr') {
+          var size = Math.floor(Math.min(vw, vh) * 0.72);
+          return { width: size, height: size };
+        }
+        var w = Math.floor(vw * 0.85);
+        var h = Math.floor(vh * 0.45);
+        return { width: w, height: h };
+      } },
       function (decodedText, decodedResult) {
         _diag.attempts += 1; _diag.successes += 1;
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
