@@ -297,7 +297,7 @@
     }, 5000);
 
     console.info('[Scanner] start() invocation');
-    _html5Scanner.start({ facingMode: { exact: "environment" } }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
+    _html5Scanner.start({ facingMode: { ideal: "environment" } }, { fps: 10, formatsToSupport: formats, qrbox: function (vw, vh) { var size = Math.floor(Math.min(vw, vh) * 0.62); return { width: size, height: size }; } },
       function (decodedText, decodedResult) {
         _diag.attempts += 1; _diag.successes += 1;
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
