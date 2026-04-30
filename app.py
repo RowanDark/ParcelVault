@@ -161,10 +161,12 @@ def intake():
         errors = []
         if not tn:
             errors.append('Tracking number is required.')
-        if not recipient:
-            errors.append('Recipient name is required.')
         if not location_id:
             errors.append('Storage location is required.')
+
+        # Recipient is optional — default to 'Unknown' if not provided
+        if not recipient:
+            recipient = 'Unknown'
 
         if not errors:
             dup = db.execute(
