@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tbl_Parcels (
     DeliveredDate  TEXT,
     DeliveredTo    TEXT,
     SignaturePath  TEXT,
+    DeliveryPhoto  TEXT,
     FOREIGN KEY (LocationID) REFERENCES tbl_Locations(LocationID)
 );
 
