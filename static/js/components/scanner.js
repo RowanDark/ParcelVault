@@ -345,7 +345,6 @@
     if (navigator.vibrate) {
       navigator.vibrate([120, 40, 120]);
     }
-    if (navigator.vibrate) navigator.vibrate(120);
     try {
       var ac = new (window.AudioContext || window.webkitAudioContext)();
       var osc = ac.createOscillator();

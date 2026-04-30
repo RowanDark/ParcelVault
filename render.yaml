@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: parcelvault
+    env: python
+    buildCommand: "apt-get install -y libzbar0 && pip install -r requirements.txt"
+    startCommand: "gunicorn app:app"
