@@ -21,6 +21,26 @@
       <form method="post" novalidate>
         <input type="hidden" name="action" value="add">
 
+        <div class="mb-3">
+          <label class="form-label">
+            Batch Number
+            <span class="text-secondary small ms-1">(auto-generated or enter custom)</span>
+          </label>
+          <div class="input-group">
+            <input type="text" class="form-control form-control-sm font-monospace"
+                   id="batch_number" name="batch_number"
+                   placeholder="e.g. BATCH2505141023 or UPS-AM-RUN-001"
+                   value="{{ current_batch or '' }}">
+            <button type="button" class="btn btn-outline-secondary btn-sm"
+                    id="gen-batch-btn">
+              <i class="bi bi-arrow-clockwise me-1"></i>Generate
+            </button>
+          </div>
+          <div class="form-text">
+            All parcels added to staging will share this batch number.
+          </div>
+        </div>
+
         <div class="mb-2">
           <label class="form-label">Tracking Number <span class="text-danger">*</span></label>
           <input type="text" class="form-control form-control-sm" id="batch_tracking" name="tracking_number"
@@ -101,7 +121,12 @@
           <tbody>
             {% for row in staging %}
             <tr>
-              <td data-label="Tracking #"><code style="color:var(--pv-accent)">{{ row.TrackingNumber }}</code></td>
+              <td data-label="Tracking #">
+                <code style="color:var(--pv-accent)">{{ row.TrackingNumber }}</code>
+                {% if row.BatchNumber %}
+                <span class="badge bg-secondary font-monospace ms-1" style="font-size:0.7rem">{{ row.BatchNumber }}</span>
+                {% endif %}
+              </td>
               <td data-label="Carrier">{{ row.Shipper or '—' }}</td>
               <td data-label="Recipient">{{ row.Recipient or '—' }}</td>
               <td data-label="Location">{{ row.LocationName or '—' }}</td>
@@ -139,10 +164,52 @@
 <script>
   document.getElementById('batch-scan-btn').addEventListener('click', function () {
     PvScanner.open({
-      tracking:  'batch_tracking',
-      shipper:   'batch_shipper',
-      recipient: 'batch_recipient',
+      mode: 'barcode',
+      onResult: function (trackingNumber) {
+        if (!trackingNumber) return;
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '';
+        var fields = {
+          action:          'add',
+          tracking_number: trackingNumber,
+          shipper:  document.getElementById('batch_shipper')
+                      ? document.getElementById('batch_shipper').value
+                      : 'Other',
+          recipient: document.getElementById('batch_recipient')
+                      ? document.getElementById('batch_recipient').value
+                      : '',
+          location_id: document.querySelector('[name="location_id"]')
+                         ? document.querySelector('[name="location_id"]').value
+                         : '',
+          batch_number: document.getElementById('batch_number')
+                          ? document.getElementById('batch_number').value
+                          : '',
+        };
+        Object.keys(fields).forEach(function (key) {
+          var inp = document.createElement('input');
+          inp.type = 'hidden';
+          inp.name = key;
+          inp.value = fields[key];
+          form.appendChild(inp);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      }
     });
+  });
+
+  document.getElementById('gen-batch-btn').addEventListener('click', function () {
+    var now = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var bn = 'BATCH' +
+      String(now.getFullYear()).slice(2) +
+      pad(now.getMonth() + 1) +
+      pad(now.getDate()) +
+      pad(now.getHours()) +
+      pad(now.getMinutes()) +
+      String(Math.floor(Math.random() * 900) + 100);
+    document.getElementById('batch_number').value = bn;
   });
 </script>
 {% endblock %}

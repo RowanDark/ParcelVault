@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS tbl_Parcels (
     ReceivedDate   TEXT    NOT NULL,
     Status         TEXT    NOT NULL DEFAULT 'In Storage',
     Notes          TEXT,
+    BatchNumber    TEXT,
     ReceivedBy     TEXT,
     PackagePhoto   TEXT,
     DeliveredDate  TEXT,
@@ -47,7 +48,8 @@ CREATE TABLE IF NOT EXISTS tbl_BatchStaging (
     TrackingNumber TEXT    NOT NULL,
     Shipper        TEXT    DEFAULT 'Other',
     Recipient      TEXT    DEFAULT 'Unknown',
-    LocationID     INTEGER NOT NULL
+    LocationID     INTEGER NOT NULL,
+    BatchNumber    TEXT
 );
 
 -- Seed default storage locations (Appendix B)
