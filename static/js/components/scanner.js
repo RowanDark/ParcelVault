@@ -133,6 +133,7 @@
   var _stream         = null;
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
+  var _mode           = 'barcode'; // 'barcode' | 'qr' | 'any'
   var _scanLoopHandle = null;
   var _html5Scanner = null;
   var _lastScanAt = 0;
@@ -162,6 +163,7 @@
 
     _safeBind('pv-scanner-modal', 'hidden.bs.modal', _stopCamera);
     _safeBind('pv-scanner-modal', 'shown.bs.modal', function () {
+      _updateModalTitle();
       requestAnimationFrame(function () {
         setTimeout(_startCamera, 80);
       });
@@ -170,12 +172,23 @@
 
   // ── Public: open scanner wired to a form ─────────────────────
   function open(fieldConfig) {
-    // fieldConfig: { tracking: 'element-id', shipper: 'element-id', recipient: 'element-id' }
     _fieldConfig = fieldConfig || {};
+    _mode = _fieldConfig.mode || 'barcode';
     _init();
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
     ).show();
+  }
+
+  function _updateModalTitle() {
+    var el = document.getElementById('pvScannerLabel');
+    if (!el) return;
+    var titles = {
+      barcode: '<i class="bi bi-upc-scan me-2"></i>Scan Package Barcode',
+      qr:      '<i class="bi bi-qr-code-scan me-2"></i>Scan Location QR Code',
+      any:     '<i class="bi bi-camera me-2"></i>Scan Label',
+    };
+    el.innerHTML = titles[_mode] || titles.barcode;
   }
 
   // ── Camera lifecycle ─────────────────────────────────────────
@@ -254,15 +267,29 @@
     if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
     _html5Scanner = new Html5Qrcode('pv-scan-reader');
-    var formats = [
-      Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.QR_CODE,
-      Html5QrcodeSupportedFormats.PDF_417,
-      Html5QrcodeSupportedFormats.DATA_MATRIX,
-      Html5QrcodeSupportedFormats.CODE_39,
-      Html5QrcodeSupportedFormats.ITF,
-      Html5QrcodeSupportedFormats.EAN_13,
-    ];
+    var FORMAT_SETS = {
+      barcode: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.PDF_417,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.EAN_13,
+      ],
+      qr: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+      ],
+      any: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.PDF_417,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.EAN_13,
+      ],
+    };
+    var formats = FORMAT_SETS[_mode] || FORMAT_SETS.barcode;
     var settled = false;
 
     if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
@@ -504,7 +531,8 @@
     var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
-    if (fmts) fmts.textContent = 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13';
+    var modeFormats = { barcode: 'CODE_128, PDF_417, CODE_39, ITF, EAN_13', qr: 'QR_CODE, DATA_MATRIX', any: 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13' };
+    if (fmts) fmts.textContent = modeFormats[_mode] || modeFormats.barcode;
     if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
     if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
   }
