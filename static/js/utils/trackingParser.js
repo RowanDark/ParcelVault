@@ -108,7 +108,9 @@
 
   // ── Extract recipient name from OCR text ─────────────────────
   function extractRecipient(text) {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(Boolean);
 
     // Strategy 1: "Ship To: John Smith" or "Recipient: Jane Doe" on one line.
     const inlineLabelRe = /^(?:ship\s*to|recipient|deliver\s*to|to|attn|attention)\s*[:\-]\s*(.+)$/i;
@@ -124,6 +126,32 @@
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
         if (isLikelyName(lines[j])) return lines[j];
       }
+    }
+
+    // Strategy 3: Locate city/state/zip line and work backwards to find the name.
+    // The name is typically 2-4 lines above the zip line.
+    const zipLineRe = /\b[A-Z]{2}\s+\d{5}(-\d{4})?\b/;
+    const streetRe  = /\b\d+\s+[A-Z].*\b(ST|AVE|BLVD|DR|RD|LN|WAY|CT|PL|CIR|HWY|STE|SUITE|APT|UNIT|FL|FLOOR)\b/i;
+
+    for (let i = 0; i < lines.length; i++) {
+      if (!zipLineRe.test(lines[i])) continue;
+
+      for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+        if (streetRe.test(lines[j])) continue;
+        if (isLikelyName(lines[j])) return lines[j];
+      }
+    }
+
+    // Strategy 4: First name-like line in the upper portion of the label,
+    // before any tracking number appears.
+    const trackingRe = /\b(1Z[0-9A-Z]{16}|9[234570]\d{20}|\d{12}|\d{20})\b/;
+    const upperLines = [];
+    for (const line of lines) {
+      if (trackingRe.test(line)) break;
+      upperLines.push(line);
+    }
+    for (let i = upperLines.length - 1; i >= 0; i--) {
+      if (isLikelyName(upperLines[i])) return upperLines[i];
     }
 
     return null;
