@@ -507,6 +507,57 @@ def locations():
                        (state, request.form.get('location_id')))
             db.commit()
             flash(f'Location {"activated" if state else "deactivated"}.', 'info')
+        elif action == 'edit':
+            location_id  = request.form.get('location_id', '').strip()
+            new_name     = request.form.get('location_name', '').strip()
+            new_desc     = request.form.get('description', '').strip()
+            new_capacity = request.form.get('capacity', '').strip() or None
+            if not location_id:
+                flash('Location ID missing.', 'error')
+            elif not new_name:
+                flash('Location name is required.', 'error')
+            else:
+                db.execute(
+                    """UPDATE tbl_Locations
+                       SET LocationName = ?,
+                           Description  = ?,
+                           Capacity     = ?
+                       WHERE LocationID = ?""",
+                    (new_name, new_desc or None, new_capacity, int(location_id))
+                )
+                db.commit()
+                flash(f'Location "{new_name}" updated.', 'success')
+        elif action == 'delete':
+            location_id = request.form.get('location_id', '').strip()
+            if not location_id:
+                flash('Location ID missing.', 'error')
+            else:
+                in_storage = db.execute(
+                    """SELECT COUNT(*) AS n FROM tbl_Parcels
+                       WHERE LocationID = ? AND Status = 'In Storage'""",
+                    (int(location_id),)
+                ).fetchone()['n']
+                if in_storage > 0:
+                    flash(
+                        f'Cannot delete — {in_storage} parcel(s) currently '
+                        f'In Storage at this location. '
+                        f'Deliver or reassign them first.',
+                        'error'
+                    )
+                else:
+                    loc = db.execute(
+                        'SELECT LocationName FROM tbl_Locations WHERE LocationID = ?',
+                        (int(location_id),)
+                    ).fetchone()
+                    db.execute(
+                        'DELETE FROM tbl_Locations WHERE LocationID = ?',
+                        (int(location_id),)
+                    )
+                    db.commit()
+                    flash(
+                        f'Location "{loc["LocationName"] if loc else location_id}" deleted.',
+                        'success'
+                    )
         return redirect(url_for('locations'))
 
     locs = db.execute(
