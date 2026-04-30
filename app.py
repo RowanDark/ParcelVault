@@ -64,6 +64,16 @@ def init_db():
 def ensure_db():
     if not os.path.exists(DATABASE):
         init_db()
+    else:
+        db = get_db()
+        cols = [r[1] for r in db.execute(
+            "PRAGMA table_info(tbl_Parcels)"
+        ).fetchall()]
+        if 'DeliveryPhoto' not in cols:
+            db.execute(
+                "ALTER TABLE tbl_Parcels ADD COLUMN DeliveryPhoto TEXT"
+            )
+            db.commit()
 
 
 @app.cli.command('init-db')
@@ -649,6 +659,89 @@ def export_csv():
     filename = f'ParcelVault_Export_{datetime.now().strftime("%Y%m%d_%H%M")}.csv'
     return Response(buf.getvalue(), mimetype='text/csv',
                     headers={'Content-Disposition': f'attachment; filename={filename}'})
+
+
+# ── Scan-to-deliver (QR location scan) ───────────────────────
+
+@app.route('/deliver/scan', methods=['GET', 'POST'])
+def deliver_scan():
+    db = get_db()
+
+    if request.method == 'POST':
+        action      = request.form.get('action', '')
+        location_id = request.form.get('location_id', '')
+        signed_by   = request.form.get('signed_by', '').strip()
+        sig_data    = request.form.get('signature_data', '').strip()
+        photo_data  = request.form.get('photo_data', '').strip()
+        parcel_ids  = request.form.getlist('parcel_ids')
+
+        if action == 'confirm' and parcel_ids and signed_by:
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            delivered = 0
+            for pid in parcel_ids:
+                try:
+                    pid_int = int(pid)
+                except (ValueError, TypeError):
+                    continue
+                parcel = db.execute(
+                    'SELECT * FROM tbl_Parcels WHERE ParcelID = ?',
+                    (pid_int,)
+                ).fetchone()
+                if not parcel or parcel['Status'] == 'Delivered':
+                    continue
+                db.execute(
+                    """UPDATE tbl_Parcels
+                       SET Status = 'Delivered',
+                           DeliveredDate = ?,
+                           DeliveredTo = ?,
+                           SignaturePath = ?,
+                           DeliveryPhoto = ?
+                       WHERE ParcelID = ?""",
+                    (now,
+                     signed_by,
+                     sig_data or None,
+                     photo_data or None,
+                     pid_int),
+                )
+                log_history(db, 'Delivered',
+                            parcel['TrackingNumber'],
+                            parcel['Shipper'],
+                            signed_by,
+                            parcel['LocationID'])
+                delivered += 1
+            db.commit()
+            flash(f'{delivered} parcel(s) delivered to '
+                  f'{request.form.get("location_name", "location")}.',
+                  'success')
+            return redirect(url_for('deliver_scan'))
+
+        if action == 'location_scanned' and location_id:
+            parcels = db.execute(
+                """SELECT p.*, l.LocationName
+                   FROM tbl_Parcels p
+                   LEFT JOIN tbl_Locations l
+                          ON p.LocationID = l.LocationID
+                   WHERE p.LocationID = ?
+                     AND p.Status = 'In Storage'
+                   ORDER BY p.ReceivedDate""",
+                (location_id,)
+            ).fetchall()
+            location = db.execute(
+                'SELECT * FROM tbl_Locations WHERE LocationID = ?',
+                (location_id,)
+            ).fetchone()
+            if not location:
+                flash('Location not found.', 'error')
+                return redirect(url_for('deliver_scan'))
+            return render_template('deliver_scan.html',
+                                   state='confirm',
+                                   parcels=parcels,
+                                   location=location)
+
+    return render_template('deliver_scan.html',
+                           state='scan',
+                           parcels=[],
+                           location=None)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}ParcelVault – Scan Delivery Location{% endblock %}
+
+{% block content %}
+<div class="pv-page-title">
+  <i class="bi bi-qr-code-scan me-2"></i>Scan Delivery Location
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+
+{% if state == 'scan' %}
+    <div class="pv-card text-center py-5">
+      <p class="text-secondary mb-4">
+        Scan the QR code posted at the delivery drop point
+      </p>
+      <button type="button" class="btn btn-primary btn-lg" id="scan-location-btn">
+        <i class="bi bi-qr-code-scan me-2"></i>Scan Location QR
+      </button>
+      <div id="scan-location-status" class="mt-3 text-secondary small"></div>
+    </div>
+
+{% elif state == 'confirm' %}
+    <form method="post">
+      <input type="hidden" name="action" value="confirm">
+      <input type="hidden" name="location_id" value="{{ location.LocationID }}">
+      <input type="hidden" name="location_name" value="{{ location.LocationName }}">
+
+      <!-- Parcel checklist -->
+      <div class="pv-card mb-3">
+        <h6 class="text-white mb-3">
+          <i class="bi bi-geo-alt me-1" style="color:var(--pv-accent)"></i>
+          Parcels at {{ location.LocationName }}
+        </h6>
+        {% for p in parcels %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox"
+                 name="parcel_ids" value="{{ p.ParcelID }}"
+                 id="p{{ p.ParcelID }}" checked>
+          <label class="form-check-label" for="p{{ p.ParcelID }}">
+            <code style="color:var(--pv-accent)">{{ p.TrackingNumber }}</code>
+            <span class="text-secondary ms-2">{{ p.Recipient }}</span>
+            <span class="badge bg-secondary ms-1">{{ p.Shipper }}</span>
+          </label>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">No parcels in storage at this location.</p>
+        {% endfor %}
+      </div>
+
+      <!-- Signed by + proof -->
+      <div class="pv-card mb-3">
+        <div class="mb-3">
+          <label class="form-label">
+            Delivered By <span class="text-danger">*</span>
+          </label>
+          <input type="text" class="form-control" name="signed_by"
+                 placeholder="Employee name" autofocus>
+        </div>
+
+        <!-- Proof tabs -->
+        <ul class="nav nav-tabs mb-3" id="proof-tabs">
+          <li class="nav-item">
+            <button class="nav-link active" type="button"
+                    data-bs-toggle="tab" data-bs-target="#tab-sig">
+              <i class="bi bi-pen me-1"></i>Signature
+            </button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" type="button"
+                    data-bs-toggle="tab" data-bs-target="#tab-photo">
+              <i class="bi bi-camera me-1"></i>Photo
+            </button>
+          </li>
+        </ul>
+
+        <div class="tab-content">
+          <!-- Signature tab -->
+          <div class="tab-pane fade show active" id="tab-sig">
+            <canvas id="signature-canvas"
+                    style="width:100%;height:180px;border:1px solid #dee2e6;
+                           border-radius:6px;background:#fff;touch-action:none">
+            </canvas>
+            <input type="hidden" name="signature_data" id="signature_data">
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                    id="sig-clear">
+              <i class="bi bi-eraser me-1"></i>Clear
+            </button>
+          </div>
+
+          <!-- Photo tab -->
+          <div class="tab-pane fade" id="tab-photo">
+            <input type="hidden" name="photo_data" id="photo_data">
+            <div class="text-center py-3">
+              <button type="button" class="btn btn-outline-primary"
+                      id="capture-proof-photo-btn">
+                <i class="bi bi-camera me-2"></i>Take Delivery Photo
+              </button>
+              <img id="proof-photo-preview"
+                   style="display:none;max-height:200px;border-radius:8px;
+                          margin-top:12px;border:1px solid #dee2e6">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-success px-5"
+              {% if not parcels %}disabled{% endif %}>
+        <i class="bi bi-check-lg me-1"></i>Confirm Delivery
+      </button>
+      <a href="{{ url_for('deliver_scan') }}"
+         class="btn btn-outline-secondary ms-2">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Scan Again
+      </a>
+    </form>
+{% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/components/scanner.js') }}"></script>
+<script>
+(function () {
+  // ── QR scan button ────────────────────────────────────────────
+  var scanBtn = document.getElementById('scan-location-btn');
+  if (scanBtn) {
+    scanBtn.addEventListener('click', function () {
+      PvScanner.open({
+        mode: 'qr',
+        onResult: function (raw) {
+          var match = raw.match(/^PVLOC:(\d+)$/);
+          if (!match) {
+            document.getElementById('scan-location-status').textContent =
+              'Invalid QR code. Please scan a ParcelVault location code.';
+            return;
+          }
+          var form = document.createElement('form');
+          form.method = 'POST';
+          form.action = '';
+          [['action', 'location_scanned'], ['location_id', match[1]]].forEach(function (pair) {
+            var inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = pair[0];
+            inp.value = pair[1];
+            form.appendChild(inp);
+          });
+          document.body.appendChild(form);
+          form.submit();
+        }
+      });
+    });
+  }
+
+  // ── Signature pad ─────────────────────────────────────────────
+  var canvas = document.getElementById('signature-canvas');
+  if (canvas) {
+    var ctx = canvas.getContext('2d');
+    var drawing = false;
+
+    function _pos(e) {
+      var r = canvas.getBoundingClientRect();
+      var src = e.touches ? e.touches[0] : e;
+      return { x: (src.clientX - r.left) * (canvas.width / r.width),
+               y: (src.clientY - r.top)  * (canvas.height / r.height) };
+    }
+
+    function _resize() {
+      var tmp = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      ctx.putImageData(tmp, 0, 0);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth   = 2;
+      ctx.lineCap     = 'round';
+    }
+    _resize();
+
+    canvas.addEventListener('mousedown',  function (e) { drawing = true; ctx.beginPath(); var p = _pos(e); ctx.moveTo(p.x, p.y); });
+    canvas.addEventListener('mousemove',  function (e) { if (!drawing) return; var p = _pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+    canvas.addEventListener('mouseup',    function ()  { drawing = false; _saveSignature(); });
+    canvas.addEventListener('mouseleave', function ()  { drawing = false; });
+    canvas.addEventListener('touchstart', function (e) { e.preventDefault(); drawing = true; ctx.beginPath(); var p = _pos(e); ctx.moveTo(p.x, p.y); }, { passive: false });
+    canvas.addEventListener('touchmove',  function (e) { e.preventDefault(); if (!drawing) return; var p = _pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
+    canvas.addEventListener('touchend',   function ()  { drawing = false; _saveSignature(); });
+
+    function _saveSignature() {
+      document.getElementById('signature_data').value = canvas.toDataURL('image/png');
+    }
+
+    var clearBtn = document.getElementById('sig-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function () {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        document.getElementById('signature_data').value = '';
+      });
+    }
+  }
+
+  // ── Proof photo capture ───────────────────────────────────────
+  var captureBtn = document.getElementById('capture-proof-photo-btn');
+  if (captureBtn) {
+    captureBtn.addEventListener('click', function () {
+      PvScanner.open({
+        mode: 'photo',
+        onResult: function (dataUrl) {
+          document.getElementById('photo_data').value = dataUrl;
+          var prev = document.getElementById('proof-photo-preview');
+          prev.src = dataUrl;
+          prev.style.display = 'block';
+          captureBtn.innerHTML = '<i class="bi bi-camera me-2"></i>Retake Photo';
+        }
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

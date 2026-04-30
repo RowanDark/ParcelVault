@@ -133,7 +133,8 @@
   var _stream         = null;
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
-  var _mode           = 'barcode'; // 'barcode' | 'qr' | 'any'
+  var _mode           = 'barcode'; // 'barcode' | 'qr' | 'any' | 'photo'
+  var _onResult       = null;
   var _scanLoopHandle = null;
   var _html5Scanner = null;
   var _lastScanAt = 0;
@@ -174,6 +175,9 @@
   function open(fieldConfig) {
     _fieldConfig = fieldConfig || {};
     _mode = _fieldConfig.mode || 'barcode';
+    _onResult = typeof _fieldConfig.onResult === 'function'
+      ? _fieldConfig.onResult
+      : null;
     _init();
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
@@ -241,7 +245,16 @@
     document.getElementById('pv-scan-result-img').src   = _capturedDataUrl;
 
     _stopCamera();
-    _runOcr();
+    if (_mode === 'photo' && _onResult) {
+      var cb = _onResult;
+      _onResult = null;
+      bootstrap.Modal.getOrCreateInstance(
+        document.getElementById('pv-scanner-modal')
+      ).hide();
+      cb(_capturedDataUrl);
+    } else {
+      _runOcr();
+    }
   }
 
   function _beginHtml5Loop() {
@@ -279,6 +292,9 @@
         Html5QrcodeSupportedFormats.QR_CODE,
         Html5QrcodeSupportedFormats.DATA_MATRIX,
       ],
+      photo: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ],
       any: [
         Html5QrcodeSupportedFormats.CODE_128,
         Html5QrcodeSupportedFormats.QR_CODE,
@@ -290,6 +306,14 @@
       ],
     };
     var formats = FORMAT_SETS[_mode] || FORMAT_SETS.barcode;
+
+    // Photo mode: camera runs for live preview; capture button grabbed directly
+    if (_mode === 'photo') {
+      var captureBtn = document.getElementById('pv-capture-btn');
+      if (captureBtn) {
+        captureBtn.onclick = function () { _captureFrame(); };
+      }
+    }
     var settled = false;
 
     if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
@@ -306,6 +330,18 @@
         if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
         _diag.lastFormat = decodedResult && decodedResult.result && decodedResult.result.format ? decodedResult.result.format.formatName : _diag.lastFormat;
         _updateDebugOverlay('decode-success');
+        // QR/photo mode with onResult: pass raw decoded text directly to caller
+        if (_onResult && (_mode === 'qr' || _mode === 'photo')) {
+          _stopCamera();
+          _signalScanSuccess();
+          var cb = _onResult;
+          _onResult = null;
+          bootstrap.Modal.getOrCreateInstance(
+            document.getElementById('pv-scanner-modal')
+          ).hide();
+          cb(decodedText);
+          return;
+        }
         BarcodeService.normalizeDecodedText(decodedText).then(function (candidates) {
           if (!candidates || !candidates.length || !_html5Scanner) return;
           _captureAndApplyCandidate(candidates[0]);
@@ -492,6 +528,13 @@
     bootstrap.Modal.getOrCreateInstance(
       document.getElementById('pv-scanner-modal')
     ).hide();
+
+    if (_onResult) {
+      var trackingEl = document.querySelector('.pv-result-tracking');
+      var cb = _onResult;
+      _onResult = null;
+      cb(trackingEl ? trackingEl.value : '');
+    }
   }
 
   // ── UI helpers ────────────────────────────────────────────────
