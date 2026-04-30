@@ -130,6 +130,8 @@
   ].join('\n');
 
   // ── Module state ─────────────────────────────────────────────
+  var HTML5QRCODE_CDN = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  var _libraryLoadPromise = null;
   var _stream         = null;
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
@@ -140,6 +142,32 @@
   var _lastScanAt = 0;
   var _startupTimeoutHandle = null;
   var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0, startAt: 0, firstDecodeMs: null, lastFormat: '-' };
+
+  function _ensureLibrary() {
+    if (window.Html5Qrcode) {
+      return Promise.resolve();
+    }
+    if (_libraryLoadPromise) {
+      return _libraryLoadPromise;
+    }
+    _libraryLoadPromise = new Promise(function(resolve, reject) {
+      var script = document.createElement('script');
+      script.src = HTML5QRCODE_CDN;
+      script.onload = function() {
+        _libraryLoadPromise = null;
+        resolve();
+      };
+      script.onerror = function() {
+        _libraryLoadPromise = null;
+        reject(new Error(
+          'Failed to load scanning library. ' +
+          'Check your internet connection and try again.'
+        ));
+      };
+      document.head.appendChild(script);
+    });
+    return _libraryLoadPromise;
+  }
 
   function _safeBind(id, event, handler) {
     var el = document.getElementById(id);
@@ -202,7 +230,16 @@
     _diag.firstDecodeMs = null;
     _diag.lastFormat = '-';
     _stream = true; // sentinel — signals camera is active to _captureAndApplyCandidate
-    _beginHtml5Loop();
+    var statusEl = document.getElementById('pv-barcode-status');
+    if (statusEl) statusEl.textContent = 'Loading scanner…';
+    _ensureLibrary()
+      .then(function() {
+        _beginHtml5Loop();
+      })
+      .catch(function(err) {
+        _stream = null;
+        _showError(err.message);
+      });
   }
 
   function _stopCamera() {
@@ -260,7 +297,7 @@
   function _beginHtml5Loop() {
     var status = document.getElementById('pv-barcode-status');
     var container = document.getElementById('pv-scan-preview');
-    if (!window.Html5Qrcode) { _showError('html5-qrcode is not available.'); return; }
+    if (!window.Html5Qrcode) { _showError('Scanning library not loaded. Please check your connection.'); return; }
     if (!container) { _showError('Scanner container is missing.'); return; }
 
     var readerEl = document.getElementById('pv-scan-reader');
