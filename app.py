@@ -74,6 +74,19 @@ def ensure_db():
                 "ALTER TABLE tbl_Parcels ADD COLUMN DeliveryPhoto TEXT"
             )
             db.commit()
+        if 'BatchNumber' not in cols:
+            db.execute(
+                "ALTER TABLE tbl_Parcels ADD COLUMN BatchNumber TEXT"
+            )
+            db.commit()
+        staging_cols = [r[1] for r in db.execute(
+            "PRAGMA table_info(tbl_BatchStaging)"
+        ).fetchall()]
+        if 'BatchNumber' not in staging_cols:
+            db.execute(
+                "ALTER TABLE tbl_BatchStaging ADD COLUMN BatchNumber TEXT"
+            )
+            db.commit()
 
 
 @app.cli.command('init-db')
@@ -90,6 +103,12 @@ def get_username():
             or os.environ.get('USER')
             or getpass.getuser()
             or 'system')
+
+
+def generate_batch_number():
+    import random
+    return 'BATCH' + datetime.now().strftime('%y%m%d%H%M') + \
+           str(random.randint(100, 999))
 
 
 def log_history(db, action, tracking_num, shipper, recipient, location_id):
@@ -214,16 +233,22 @@ def batch_intake():
         action = request.form.get('action', '')
 
         if action == 'add':
-            tn          = request.form.get('tracking_number', '').strip()
-            shipper     = request.form.get('shipper', 'Other')
-            recipient   = request.form.get('recipient', '').strip()
-            location_id = request.form.get('location_id', '').strip()
+            tn           = request.form.get('tracking_number', '').strip()
+            shipper      = request.form.get('shipper', 'Other')
+            recipient    = request.form.get('recipient', '').strip()
+            location_id  = request.form.get('location_id', '').strip()
+            batch_number = request.form.get('batch_number', '').strip()
             if tn and location_id:
                 db.execute(
-                    'INSERT INTO tbl_BatchStaging (TrackingNumber, Shipper, Recipient, LocationID) VALUES (?, ?, ?, ?)',
-                    (tn, shipper, recipient or 'Unknown', int(location_id)),
+                    """INSERT INTO tbl_BatchStaging
+                       (TrackingNumber, Shipper, Recipient, LocationID, BatchNumber)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (tn, shipper, recipient or 'Unknown',
+                     int(location_id), batch_number or None),
                 )
                 db.commit()
+                return redirect(url_for('batch_intake',
+                                        batch=batch_number or ''))
             else:
                 flash('Tracking number and location are required.', 'error')
 
@@ -251,14 +276,15 @@ def batch_intake():
                     db.execute(
                         """INSERT INTO tbl_Parcels
                            (TrackingNumber, Shipper, Recipient, LocationID,
-                            ReceivedDate, Status, ReceivedBy)
-                           VALUES (?, ?, ?, ?, ?, 'In Storage', ?)""",
+                            ReceivedDate, Status, ReceivedBy, BatchNumber)
+                           VALUES (?, ?, ?, ?, ?, 'In Storage', ?, ?)""",
                         (tn,
                          row['Shipper'] or 'Other',
                          row['Recipient'] or 'Unknown',
                          row['LocationID'],
                          datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                         get_username()),
+                         get_username(),
+                         row['BatchNumber'] or None),
                     )
                     log_history(db, 'Batch Received', tn,
                                 row['Shipper'] or '',
@@ -284,8 +310,10 @@ def batch_intake():
            LEFT JOIN tbl_Locations l ON s.LocationID = l.LocationID
            ORDER BY s.StagingID"""
     ).fetchall()
+    current_batch = request.args.get('batch', '')
     return render_template('batch_intake.html', locations=locations,
-                           carriers=CARRIERS, staging=staging)
+                           carriers=CARRIERS, staging=staging,
+                           current_batch=current_batch)
 
 
 # ── Parcel list (frm_ParcelList) ──────────────────────────────
@@ -306,7 +334,7 @@ def parcel_list():
 
     query  = """SELECT p.ParcelID, p.TrackingNumber, p.Shipper, p.Recipient,
                        l.LocationName, p.ReceivedDate, p.Status,
-                       p.DeliveredDate, p.DeliveredTo
+                       p.DeliveredDate, p.DeliveredTo, p.BatchNumber
                 FROM tbl_Parcels p
                 LEFT JOIN tbl_Locations l ON p.LocationID = l.LocationID
                 WHERE 1=1"""
