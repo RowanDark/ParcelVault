@@ -20,6 +20,23 @@
       <div id="scan-location-status" class="mt-3 text-secondary small"></div>
     </div>
 
+{% elif state == 'empty' %}
+    <div class="pv-card text-center py-5">
+      <i class="bi bi-inbox display-4 text-secondary mb-3 d-block"></i>
+      <h5 class="mb-1">No Parcels at This Location</h5>
+      <p class="text-secondary mb-4">
+        <strong>{{ location.LocationName }}</strong> has no parcels
+        currently In Storage. Verify you scanned the correct QR code.
+      </p>
+      <a href="{{ url_for('deliver_scan') }}" class="btn btn-primary">
+        <i class="bi bi-arrow-counterclockwise me-2"></i>Scan Again
+      </a>
+      <a href="{{ url_for('parcel_list') }}"
+         class="btn btn-outline-secondary ms-2">
+        <i class="bi bi-list-ul me-1"></i>View All Parcels
+      </a>
+    </div>
+
 {% elif state == 'confirm' %}
     <form method="post">
       <input type="hidden" name="action" value="confirm">
@@ -43,11 +60,10 @@
             <span class="badge bg-secondary ms-1">{{ p.Shipper }}</span>
           </label>
         </div>
-        {% else %}
-        <p class="text-secondary mb-0">No parcels in storage at this location.</p>
         {% endfor %}
       </div>
 
+      {% if parcels %}
       <!-- Signed by + proof -->
       <div class="pv-card mb-3">
         <div class="mb-3">
@@ -104,14 +120,22 @@
         </div>
       </div>
 
-      <button type="submit" class="btn btn-success px-5"
-              {% if not parcels %}disabled{% endif %}>
+      <button type="submit" class="btn btn-success px-5">
         <i class="bi bi-check-lg me-1"></i>Confirm Delivery
       </button>
       <a href="{{ url_for('deliver_scan') }}"
          class="btn btn-outline-secondary ms-2">
         <i class="bi bi-arrow-counterclockwise me-1"></i>Scan Again
       </a>
+      {% else %}
+      <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        No parcels found at this location.
+        <a href="{{ url_for('deliver_scan') }}" class="alert-link ms-2">
+          Scan again
+        </a>
+      </div>
+      {% endif %}
     </form>
 {% endif %}
 

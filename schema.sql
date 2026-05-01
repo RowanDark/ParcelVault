@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS tbl_Parcels (
     ReceivedDate   TEXT    NOT NULL,
     Status         TEXT    NOT NULL DEFAULT 'In Storage',
     Notes          TEXT,
-    BatchNumber    TEXT,
     ReceivedBy     TEXT,
     PackagePhoto   TEXT,
     DeliveredDate  TEXT,
@@ -40,16 +39,6 @@ CREATE TABLE IF NOT EXISTS tbl_History (
     Recipient      TEXT,
     LocationID     INTEGER,
     PerformedBy    TEXT
-);
-
--- tbl_BatchStaging stays local (never synced to SharePoint)
-CREATE TABLE IF NOT EXISTS tbl_BatchStaging (
-    StagingID      INTEGER PRIMARY KEY AUTOINCREMENT,
-    TrackingNumber TEXT    NOT NULL,
-    Shipper        TEXT    DEFAULT 'Other',
-    Recipient      TEXT    DEFAULT 'Unknown',
-    LocationID     INTEGER NOT NULL,
-    BatchNumber    TEXT
 );
 
 -- Seed default storage locations (Appendix B)

@@ -74,19 +74,6 @@ def ensure_db():
                 "ALTER TABLE tbl_Parcels ADD COLUMN DeliveryPhoto TEXT"
             )
             db.commit()
-        if 'BatchNumber' not in cols:
-            db.execute(
-                "ALTER TABLE tbl_Parcels ADD COLUMN BatchNumber TEXT"
-            )
-            db.commit()
-        staging_cols = [r[1] for r in db.execute(
-            "PRAGMA table_info(tbl_BatchStaging)"
-        ).fetchall()]
-        if 'BatchNumber' not in staging_cols:
-            db.execute(
-                "ALTER TABLE tbl_BatchStaging ADD COLUMN BatchNumber TEXT"
-            )
-            db.commit()
 
 
 @app.cli.command('init-db')
@@ -103,12 +90,6 @@ def get_username():
             or os.environ.get('USER')
             or getpass.getuser()
             or 'system')
-
-
-def generate_batch_number():
-    import random
-    return 'BATCH' + datetime.now().strftime('%y%m%d%H%M') + \
-           str(random.randint(100, 999))
 
 
 def log_history(db, action, tracking_num, shipper, recipient, location_id):
@@ -142,38 +123,6 @@ def index():
 
 
 # ── Real-time duplicate check API ─────────────────────────────
-
-@app.route('/api/confirm-parcel-location', methods=['POST'])
-def confirm_parcel_location():
-    data        = request.get_json()
-    parcel_id   = data.get('parcel_id')
-    location_id = data.get('location_id')
-
-    if not parcel_id or not location_id:
-        return jsonify({'success': False,
-                        'error': 'parcel_id and location_id required'}), 400
-
-    parcel = get_db().execute(
-        'SELECT * FROM tbl_Parcels WHERE ParcelID = ?',
-        (parcel_id,)
-    ).fetchone()
-    if not parcel:
-        return jsonify({'success': False, 'error': 'Parcel not found'}), 404
-
-    loc = get_db().execute(
-        'SELECT LocationName FROM tbl_Locations WHERE LocationID = ?',
-        (location_id,)
-    ).fetchone()
-
-    return jsonify({
-        'success':       True,
-        'parcel_id':     parcel_id,
-        'location_id':   location_id,
-        'location_name': loc['LocationName'] if loc else str(location_id),
-        'tracking':      parcel['TrackingNumber'],
-        'recipient':     parcel['Recipient'],
-    })
-
 
 @app.route('/api/check-duplicate')
 def check_duplicate():
@@ -252,102 +201,6 @@ def intake():
                            carriers=CARRIERS, form=default_form)
 
 
-# ── Batch intake (frm_BatchIntake) ────────────────────────────
-
-@app.route('/batch', methods=['GET', 'POST'])
-def batch_intake():
-    db = get_db()
-    locations = db.execute(
-        'SELECT * FROM tbl_Locations WHERE IsActive = 1 ORDER BY LocationName'
-    ).fetchall()
-
-    if request.method == 'POST':
-        action = request.form.get('action', '')
-
-        if action == 'add':
-            tn           = request.form.get('tracking_number', '').strip()
-            shipper      = request.form.get('shipper', 'Other')
-            recipient    = request.form.get('recipient', '').strip()
-            location_id  = request.form.get('location_id', '').strip()
-            batch_number = request.form.get('batch_number', '').strip()
-            if tn and location_id:
-                db.execute(
-                    """INSERT INTO tbl_BatchStaging
-                       (TrackingNumber, Shipper, Recipient, LocationID, BatchNumber)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (tn, shipper, recipient or 'Unknown',
-                     int(location_id), batch_number or None),
-                )
-                db.commit()
-                return redirect(url_for('batch_intake',
-                                        batch=batch_number or ''))
-            else:
-                flash('Tracking number and location are required.', 'error')
-
-        elif action == 'delete':
-            db.execute('DELETE FROM tbl_BatchStaging WHERE StagingID = ?',
-                       (request.form.get('staging_id'),))
-            db.commit()
-
-        elif action == 'process':
-            rows    = db.execute('SELECT * FROM tbl_BatchStaging').fetchall()
-            added   = 0
-            skipped = 0
-            dupes   = []
-            for row in rows:
-                tn = (row['TrackingNumber'] or '').strip()
-                if not tn:
-                    continue
-                dup = db.execute(
-                    'SELECT COUNT(*) AS n FROM tbl_Parcels WHERE TrackingNumber = ?', (tn,)
-                ).fetchone()['n']
-                if dup:
-                    skipped += 1
-                    dupes.append(tn)
-                else:
-                    db.execute(
-                        """INSERT INTO tbl_Parcels
-                           (TrackingNumber, Shipper, Recipient, LocationID,
-                            ReceivedDate, Status, ReceivedBy, BatchNumber)
-                           VALUES (?, ?, ?, ?, ?, 'In Storage', ?, ?)""",
-                        (tn,
-                         row['Shipper'] or 'Other',
-                         row['Recipient'] or 'Unknown',
-                         row['LocationID'],
-                         datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                         get_username(),
-                         row['BatchNumber'] or None),
-                    )
-                    log_history(db, 'Batch Received', tn,
-                                row['Shipper'] or '',
-                                row['Recipient'] or 'Unknown',
-                                row['LocationID'])
-                    added += 1
-            db.execute('DELETE FROM tbl_BatchStaging')
-            db.commit()
-            msg = f'{added} parcel(s) successfully imported.'
-            if skipped:
-                msg += f' {skipped} duplicate(s) skipped: {", ".join(dupes)}'
-            flash(msg, 'success' if not skipped else 'warning')
-
-        elif action == 'clear':
-            db.execute('DELETE FROM tbl_BatchStaging')
-            db.commit()
-            flash('Staging table cleared.', 'info')
-
-        return redirect(url_for('batch_intake'))
-
-    staging = db.execute(
-        """SELECT s.*, l.LocationName FROM tbl_BatchStaging s
-           LEFT JOIN tbl_Locations l ON s.LocationID = l.LocationID
-           ORDER BY s.StagingID"""
-    ).fetchall()
-    current_batch = request.args.get('batch', '')
-    return render_template('batch_intake.html', locations=locations,
-                           carriers=CARRIERS, staging=staging,
-                           current_batch=current_batch)
-
-
 # ── Parcel list (frm_ParcelList) ──────────────────────────────
 
 @app.route('/parcels')
@@ -366,7 +219,7 @@ def parcel_list():
 
     query  = """SELECT p.ParcelID, p.TrackingNumber, p.Shipper, p.Recipient,
                        l.LocationName, p.ReceivedDate, p.Status,
-                       p.DeliveredDate, p.DeliveredTo, p.BatchNumber
+                       p.DeliveredDate, p.DeliveredTo
                 FROM tbl_Parcels p
                 LEFT JOIN tbl_Locations l ON p.LocationID = l.LocationID
                 WHERE 1=1"""
@@ -470,85 +323,6 @@ def deliver(parcel_id):
         return redirect(url_for('parcel_list'))
 
     return render_template('deliver.html', parcel=parcel)
-
-
-# ── Batch delivery (frm_BatchDeliver) ────────────────────────
-
-@app.route('/batch-deliver', methods=['GET', 'POST'])
-def batch_deliver():
-    db = get_db()
-
-    if request.method == 'POST':
-        parcel_ids = request.form.getlist('parcel_ids')
-        signed_by  = request.form.get('signed_by', '').strip() \
-                     or f'Batch ({get_username()})'
-        photo_data = request.form.get('photo_data', '').strip()
-
-        if not parcel_ids:
-            flash('No parcels selected.', 'warning')
-            return redirect(url_for('batch_deliver'))
-
-        delivered = 0
-        skipped   = []
-        now       = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        for pid in parcel_ids:
-            try:
-                pid_int = int(pid)
-            except (ValueError, TypeError):
-                continue
-            parcel = db.execute(
-                'SELECT * FROM tbl_Parcels WHERE ParcelID = ?', (pid_int,)
-            ).fetchone()
-            if not parcel or parcel['Status'] == 'Delivered':
-                skipped.append(parcel['TrackingNumber'] if parcel else str(pid))
-                continue
-
-            confirmed_loc = request.form.get(
-                f'confirmed_location_{pid_int}', ''
-            ).strip() or parcel['LocationID']
-
-            db.execute(
-                """UPDATE tbl_Parcels
-                   SET Status        = 'Delivered',
-                       DeliveredDate = ?,
-                       DeliveredTo   = ?,
-                       DeliveryPhoto = ?,
-                       LocationID    = ?
-                   WHERE ParcelID = ?""",
-                (now, signed_by, photo_data or None,
-                 confirmed_loc, pid_int),
-            )
-            log_history(db, 'Batch Delivered', parcel['TrackingNumber'],
-                        parcel['Shipper'], signed_by, confirmed_loc)
-            delivered += 1
-
-        db.commit()
-
-        if delivered:
-            msg = f'{delivered} parcel(s) marked as delivered.'
-            if skipped:
-                shown = skipped[:5]
-                extra = len(skipped) - len(shown)
-                msg += (f' {len(skipped)} already delivered (skipped): '
-                        f'{", ".join(shown)}{"…" if extra > 0 else ""}.')
-            flash(msg, 'success' if not skipped else 'warning')
-        elif skipped:
-            flash(f'All {len(skipped)} selected parcel(s) were already delivered.', 'warning')
-        else:
-            flash('No parcels could be delivered.', 'error')
-
-        return redirect(url_for('batch_deliver'))
-
-    parcels = db.execute(
-        """SELECT p.ParcelID, p.TrackingNumber, p.Shipper, p.Recipient,
-                  l.LocationName, p.ReceivedDate, p.Status, p.LocationID
-           FROM tbl_Parcels p
-           LEFT JOIN tbl_Locations l ON p.LocationID = l.LocationID
-           WHERE p.Status != 'Delivered'
-           ORDER BY p.ReceivedDate DESC"""
-    ).fetchall()
-    return render_template('batch_deliver.html', parcels=parcels)
 
 
 # ── Storage locations (frm_Locations) ─────────────────────────
@@ -855,6 +629,11 @@ def deliver_scan():
             if not location:
                 flash('Location not found.', 'error')
                 return redirect(url_for('deliver_scan'))
+            if not parcels:
+                return render_template('deliver_scan.html',
+                                       state='empty',
+                                       parcels=[],
+                                       location=location)
             return render_template('deliver_scan.html',
                                    state='confirm',
                                    parcels=parcels,

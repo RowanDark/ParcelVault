@@ -30,14 +30,6 @@
              href="{{ url_for('intake') }}"><i class="bi bi-plus-circle me-1"></i>Receive</a>
         </li>
         <li class="nav-item">
-          <a class="nav-link {% if request.endpoint == 'batch_intake' %}active{% endif %}"
-             href="{{ url_for('batch_intake') }}"><i class="bi bi-stack me-1"></i>Batch Receive</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {% if request.endpoint == 'batch_deliver' %}active{% endif %}"
-             href="{{ url_for('batch_deliver') }}"><i class="bi bi-truck me-1"></i>Batch Deliver</a>
-        </li>
-        <li class="nav-item">
           <a class="nav-link {% if request.endpoint == 'deliver_scan' %}active{% endif %}"
              href="{{ url_for('deliver_scan') }}"><i class="bi bi-qr-code-scan me-1"></i>Scan Deliver</a>
         </li>
