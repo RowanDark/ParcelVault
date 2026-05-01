@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS tbl_History (
 );
 
 -- Seed default storage locations (Appendix B)
-INSERT OR IGNORE INTO tbl_Locations (LocationID, LocationName, Description, IsActive) VALUES
+INSERT OR IGNORE INTO tbl_Locations (LocationID, LocationName, IsActive) VALUES
     (1, 'HR',              1),
     (2, 'Accounting',      1),
     (3, 'Tech Support',    1),
