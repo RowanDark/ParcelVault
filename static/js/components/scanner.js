@@ -470,7 +470,22 @@
     ).then(function () {
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
-      console.info('[Scanner] start() resolution');
+      console.info('[Scanner] start() resolved — rear camera');
+
+      // TEMP DIAGNOSTIC — remove after fix confirmed
+      setTimeout(function() {
+        var readerEl = document.getElementById('pv-scan-reader');
+        var video = document.querySelector('#pv-scan-reader video');
+        console.info('[Scanner] Diagnostic after 2s:', {
+          readerEl_exists:  !!readerEl,
+          readerEl_width:   readerEl ? readerEl.getBoundingClientRect().width : 0,
+          readerEl_height:  readerEl ? readerEl.getBoundingClientRect().height : 0,
+          video_exists:     !!video,
+          video_width:      video ? video.videoWidth : 0,
+          video_height:     video ? video.videoHeight : 0,
+          video_readyState: video ? video.readyState : -1,
+        });
+      }, 2000);
     }).catch(function (err) {
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
