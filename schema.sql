@@ -52,5 +52,3 @@ INSERT OR IGNORE INTO tbl_Locations (LocationID, LocationName, Description, IsAc
     (7, 'Maintenance',     1),
     (8, 'Warehouse',       1),
     (9, 'QC',              1);
-    (6, 'IT Department Hold',      'Hold area for IT department packages',       1),
-    (7, 'Oversized / Freight Area','Area for oversized packages and freight',    1);
