@@ -436,12 +436,20 @@
 
     console.info('[Scanner] start() invocation');
     _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function(vw, vh) {
+        // html5-qrcode scales qrbox from element space to video space internally.
+        // Using 0.60 of element dimensions gives enough headroom that after typical
+        // scaling (1.0x – 1.5x) the result stays safely under the video feed size,
+        // preventing the silent decode failure caused by qrbox exceeding video bounds.
         if (_mode === 'qr') {
-          var size = Math.floor(Math.min(vw, vh) * 0.72);
+          var size = Math.floor(Math.min(vw, vh) * 0.60);
           return { width: size, height: size };
         }
-        var w = Math.floor(vw * 0.85);
-        var h = Math.floor(vh * 0.45);
+        // Barcode mode: wide rectangle, capped safely
+        var w = Math.floor(vw * 0.60);
+        var h = Math.floor(vh * 0.35);
+        // Hard floor so very small modals still give a usable target
+        w = Math.max(w, 200);
+        h = Math.max(h, 80);
         return { width: w, height: h };
       } },
       function (decodedText, decodedResult) {
