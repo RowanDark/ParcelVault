@@ -43,10 +43,14 @@ CREATE TABLE IF NOT EXISTS tbl_History (
 
 -- Seed default storage locations (Appendix B)
 INSERT OR IGNORE INTO tbl_Locations (LocationID, LocationName, Description, IsActive) VALUES
-    (1, 'Mailroom A',              'Main mailroom area',                         1),
-    (2, 'Mailroom B',              'Secondary mailroom area',                    1),
-    (3, 'Secure Storage / Lockup', 'Secured storage for high-value packages',    1),
-    (4, 'Reception Desk',          'Front reception area',                       1),
-    (5, 'Loading Dock',            'Loading and unloading dock',                 1),
+    (1, 'HR',              1),
+    (2, 'Accounting',      1),
+    (3, 'Tech Support',    1),
+    (4, 'Reception Desk',  1),
+    (5, 'Purchasing',      1),
+    (6, 'IT',              1),
+    (7, 'Maintenance',     1),
+    (8, 'Warehouse',       1),
+    (9, 'QC',              1);
     (6, 'IT Department Hold',      'Hold area for IT department packages',       1),
     (7, 'Oversized / Freight Area','Area for oversized packages and freight',    1);
