@@ -47,9 +47,11 @@
         </div>
 
         <div class="mb-3">
-          <label for="location_id" class="form-label">Storage Location <span class="text-danger">*</span></label>
+          <label for="location_id" class="form-label">Storage Location
+            <span class="text-secondary small ms-1">(optional)</span>
+          </label>
           <select class="form-select" id="location_id" name="location_id">
-            <option value="">— Select location —</option>
+            <option value="">— Assign at delivery —</option>
             {% for loc in locations %}
               <option value="{{ loc.LocationID }}"
                 {% if form.get('location_id')|string == loc.LocationID|string %}selected{% endif %}>

@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tbl_Parcels (
     TrackingNumber TEXT    NOT NULL,
     Shipper        TEXT    NOT NULL DEFAULT 'Other',
     Recipient      TEXT    NOT NULL,
-    LocationID     INTEGER NOT NULL,
+    LocationID     INTEGER,
     ReceivedDate   TEXT    NOT NULL,
     Status         TEXT    NOT NULL DEFAULT 'In Storage',
     Notes          TEXT,

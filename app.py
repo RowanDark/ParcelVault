@@ -161,8 +161,6 @@ def intake():
         errors = []
         if not tn:
             errors.append('Tracking number is required.')
-        if not location_id:
-            errors.append('Storage location is required.')
 
         # Recipient is optional — default to 'Unknown' if not provided
         if not recipient:
@@ -189,10 +187,12 @@ def intake():
                (TrackingNumber, Shipper, Recipient, LocationID,
                 ReceivedDate, Status, Notes, ReceivedBy)
                VALUES (?, ?, ?, ?, ?, 'In Storage', ?, ?)""",
-            (tn, shipper, recipient, int(location_id),
+            (tn, shipper, recipient,
+             int(location_id) if location_id else None,
              recv_date.replace('T', ' '), notes, get_username()),
         )
-        log_history(db, 'Received', tn, shipper, recipient, int(location_id))
+        log_history(db, 'Received', tn, shipper, recipient,
+                    int(location_id) if location_id else None)
         db.commit()
         flash(f'Parcel {tn} successfully logged.', 'success')
         return redirect(url_for('intake'))
