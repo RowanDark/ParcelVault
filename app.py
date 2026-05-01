@@ -14,7 +14,7 @@ from datetime import datetime
 
 import qrcode
 from flask import (Flask, Response, flash, g, jsonify, redirect,
-                   render_template, request, url_for)
+                   render_template, request, session, url_for)
 
 app = Flask(__name__)
 _secret = os.environ.get('SECRET_KEY')
@@ -557,92 +557,167 @@ def export_csv():
                     headers={'Content-Disposition': f'attachment; filename={filename}'})
 
 
-# ── Scan-to-deliver (QR location scan) ───────────────────────
+# ── Scan-to-deliver (tracking-first workflow) ─────────────────
 
 @app.route('/deliver/scan', methods=['GET', 'POST'])
 def deliver_scan():
     db = get_db()
 
-    if request.method == 'POST':
-        action      = request.form.get('action', '')
-        location_id = request.form.get('location_id', '')
-        signed_by   = request.form.get('signed_by', '').strip()
-        sig_data    = request.form.get('signature_data', '').strip()
-        photo_data  = request.form.get('photo_data', '').strip()
-        parcel_ids  = request.form.getlist('parcel_ids')
+    # ── Clear queue ───────────────────────────────────────────────
+    if request.args.get('clear'):
+        session.pop('delivery_queue', None)
+        return redirect(url_for('deliver_scan'))
 
-        if action == 'confirm' and parcel_ids and signed_by:
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+
+        # ── Scan a tracking number ────────────────────────────────
+        if action == 'scan_tracking':
+            tn = request.form.get('tracking_number', '').strip()
+            if not tn:
+                flash('No tracking number received.', 'error')
+                return redirect(url_for('deliver_scan'))
+
+            parcel = db.execute(
+                """SELECT p.*, l.LocationName
+                   FROM tbl_Parcels p
+                   LEFT JOIN tbl_Locations l
+                          ON p.LocationID = l.LocationID
+                   WHERE p.TrackingNumber = ?""",
+                (tn,)
+            ).fetchone()
+
+            if not parcel:
+                flash(
+                    f'Tracking number {tn} not found. '
+                    f'Log it at Receive Parcel first.',
+                    'error'
+                )
+                return redirect(url_for('deliver_scan'))
+
+            if parcel['Status'] == 'Delivered':
+                flash(
+                    f'{tn} was already delivered'
+                    f'{" on " + parcel["DeliveredDate"][:10] if parcel["DeliveredDate"] else ""}.',
+                    'warning'
+                )
+                return redirect(url_for('deliver_scan'))
+
+            queue = session.get('delivery_queue', [])
+            already = any(q['parcel_id'] == parcel['ParcelID'] for q in queue)
+            if already:
+                flash(f'{tn} is already in the delivery queue.', 'warning')
+            else:
+                queue.append({
+                    'parcel_id':     parcel['ParcelID'],
+                    'tracking':      parcel['TrackingNumber'],
+                    'recipient':     parcel['Recipient'],
+                    'shipper':       parcel['Shipper'],
+                    'location_id':   parcel['LocationID'],
+                    'location_name': parcel['LocationName'] or 'Unassigned',
+                })
+                session['delivery_queue'] = queue
+                session.modified = True
+                flash(
+                    f'{tn} added to delivery queue '
+                    f'({len(queue)} parcel{"s" if len(queue) != 1 else ""} queued).',
+                    'success'
+                )
+            return redirect(url_for('deliver_scan'))
+
+        # ── Scan a location QR ────────────────────────────────────
+        if action == 'scan_location':
+            location_id = request.form.get('location_id', '').strip()
+            queue = session.get('delivery_queue', [])
+
+            if not queue:
+                flash(
+                    'No parcels in queue. '
+                    'Scan at least one tracking number first.',
+                    'error'
+                )
+                return redirect(url_for('deliver_scan'))
+
+            if not location_id:
+                flash('No location received from QR scan.', 'error')
+                return redirect(url_for('deliver_scan'))
+
+            location = db.execute(
+                'SELECT * FROM tbl_Locations WHERE LocationID = ?',
+                (int(location_id),)
+            ).fetchone()
+            if not location:
+                flash('Location not found.', 'error')
+                return redirect(url_for('deliver_scan'))
+
+            mismatches = [
+                q for q in queue
+                if q['location_id']
+                and str(q['location_id']) != str(location_id)
+            ]
+
+            return render_template('deliver_scan.html',
+                                   state='confirm',
+                                   queue=queue,
+                                   location=location,
+                                   mismatches=mismatches)
+
+        # ── Confirm delivery ──────────────────────────────────────
+        if action == 'confirm':
+            queue       = session.get('delivery_queue', [])
+            location_id = request.form.get('location_id', '').strip()
+            signed_by   = request.form.get('signed_by', '').strip() or None
+            sig_data    = request.form.get('signature_data', '').strip() or None
+            photo_data  = request.form.get('photo_data', '').strip() or None
+
+            if not queue:
+                flash('Delivery queue is empty.', 'error')
+                return redirect(url_for('deliver_scan'))
+
             now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             delivered = 0
-            for pid in parcel_ids:
-                try:
-                    pid_int = int(pid)
-                except (ValueError, TypeError):
-                    continue
+            for item in queue:
                 parcel = db.execute(
                     'SELECT * FROM tbl_Parcels WHERE ParcelID = ?',
-                    (pid_int,)
+                    (item['parcel_id'],)
                 ).fetchone()
                 if not parcel or parcel['Status'] == 'Delivered':
                     continue
                 db.execute(
                     """UPDATE tbl_Parcels
-                       SET Status = 'Delivered',
+                       SET Status        = 'Delivered',
                            DeliveredDate = ?,
-                           DeliveredTo = ?,
+                           DeliveredTo   = ?,
                            SignaturePath = ?,
-                           DeliveryPhoto = ?
+                           DeliveryPhoto = ?,
+                           LocationID    = ?
                        WHERE ParcelID = ?""",
                     (now,
-                     signed_by,
-                     sig_data or None,
-                     photo_data or None,
-                     pid_int),
+                     signed_by or get_username(),
+                     sig_data,
+                     photo_data,
+                     int(location_id) if location_id else parcel['LocationID'],
+                     item['parcel_id']),
                 )
                 log_history(db, 'Delivered',
                             parcel['TrackingNumber'],
                             parcel['Shipper'],
-                            signed_by,
-                            parcel['LocationID'])
+                            signed_by or get_username(),
+                            int(location_id) if location_id else parcel['LocationID'])
                 delivered += 1
+
             db.commit()
-            flash(f'{delivered} parcel(s) delivered to '
-                  f'{request.form.get("location_name", "location")}.',
-                  'success')
+            session.pop('delivery_queue', None)
+            flash(f'{delivered} parcel(s) successfully delivered.', 'success')
             return redirect(url_for('deliver_scan'))
 
-        if action == 'location_scanned' and location_id:
-            parcels = db.execute(
-                """SELECT p.*, l.LocationName
-                   FROM tbl_Parcels p
-                   LEFT JOIN tbl_Locations l
-                          ON p.LocationID = l.LocationID
-                   WHERE p.LocationID = ?
-                     AND p.Status = 'In Storage'
-                   ORDER BY p.ReceivedDate""",
-                (location_id,)
-            ).fetchall()
-            location = db.execute(
-                'SELECT * FROM tbl_Locations WHERE LocationID = ?',
-                (location_id,)
-            ).fetchone()
-            if not location:
-                flash('Location not found.', 'error')
-                return redirect(url_for('deliver_scan'))
-            if not parcels:
-                return render_template('deliver_scan.html',
-                                       state='empty',
-                                       parcels=[],
-                                       location=location)
-            return render_template('deliver_scan.html',
-                                   state='confirm',
-                                   parcels=parcels,
-                                   location=location)
-
+    # ── GET — show current queue ──────────────────────────────────
+    queue = session.get('delivery_queue', [])
     return render_template('deliver_scan.html',
                            state='scan',
-                           parcels=[],
-                           location=None)
+                           queue=queue,
+                           location=None,
+                           mismatches=[])
 
 
 if __name__ == '__main__':
