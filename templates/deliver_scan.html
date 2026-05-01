@@ -1,183 +1,271 @@
 {% extends "base.html" %}
-{% block title %}ParcelVault – Scan Delivery Location{% endblock %}
-
+{% block title %}ParcelVault – Scan Deliver{% endblock %}
 {% block content %}
+
 <div class="pv-page-title">
-  <i class="bi bi-qr-code-scan me-2"></i>Scan Delivery Location
+  <i class="bi bi-qr-code-scan me-2"></i>Scan Deliver
 </div>
 
-<div class="row justify-content-center">
-  <div class="col-lg-7">
+{# ── SCAN STATE — tracking scan + queue display ── #}
+{% if state in ('scan', 'confirm') %}
 
-{% if state == 'scan' %}
-    <div class="pv-card text-center py-5">
-      <p class="text-secondary mb-4">
-        Scan the QR code posted at the delivery drop point
+<div class="row g-3">
+
+  {# Left col: scan input #}
+  <div class="col-lg-5">
+
+    {# Tracking number scan card #}
+    <div class="pv-card mb-3">
+      <h6 class="mb-3">
+        <i class="bi bi-upc-scan me-2"></i>Step 1 — Scan Tracking Number
+      </h6>
+      <form method="post" id="scan-tn-form">
+        <input type="hidden" name="action" value="scan_tracking">
+        <div class="input-group">
+          <input type="text" class="form-control font-monospace"
+                 name="tracking_number" id="deliver-tn-input"
+                 placeholder="Scan or type tracking number"
+                 autocomplete="off" autofocus>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i>
+          </button>
+        </div>
+        <div class="mt-2">
+          <button type="button" class="btn btn-sm btn-outline-primary w-100"
+                  id="scan-tn-btn">
+            <i class="bi bi-upc-scan me-1"></i>Use Camera Scanner
+          </button>
+        </div>
+      </form>
+    </div>
+
+    {# Location QR scan card — only shown when queue has items #}
+    {% if queue %}
+    <div class="pv-card mb-3">
+      <h6 class="mb-3">
+        <i class="bi bi-qr-code me-2"></i>Step 2 — Scan Destination QR
+      </h6>
+      <p class="text-secondary small mb-3">
+        Scan the QR code at the drop point to assign all
+        queued parcels to that location.
       </p>
-      <button type="button" class="btn btn-primary btn-lg" id="scan-location-btn">
+      <button type="button" class="btn btn-success w-100"
+              id="scan-location-btn">
         <i class="bi bi-qr-code-scan me-2"></i>Scan Location QR
       </button>
-      <div id="scan-location-status" class="mt-3 text-secondary small"></div>
+      <form method="post" id="scan-location-form" style="display:none">
+        <input type="hidden" name="action" value="scan_location">
+        <input type="hidden" name="location_id" id="scanned-location-id">
+      </form>
     </div>
-
-{% elif state == 'empty' %}
-    <div class="pv-card text-center py-5">
-      <i class="bi bi-inbox display-4 text-secondary mb-3 d-block"></i>
-      <h5 class="mb-1">No Parcels at This Location</h5>
-      <p class="text-secondary mb-4">
-        <strong>{{ location.LocationName }}</strong> has no parcels
-        currently In Storage. Verify you scanned the correct QR code.
-      </p>
-      <a href="{{ url_for('deliver_scan') }}" class="btn btn-primary">
-        <i class="bi bi-arrow-counterclockwise me-2"></i>Scan Again
-      </a>
-      <a href="{{ url_for('parcel_list') }}"
-         class="btn btn-outline-secondary ms-2">
-        <i class="bi bi-list-ul me-1"></i>View All Parcels
-      </a>
-    </div>
-
-{% elif state == 'confirm' %}
-    <form method="post">
-      <input type="hidden" name="action" value="confirm">
-      <input type="hidden" name="location_id" value="{{ location.LocationID }}">
-      <input type="hidden" name="location_name" value="{{ location.LocationName }}">
-
-      <!-- Parcel checklist -->
-      <div class="pv-card mb-3">
-        <h6 class="text-white mb-3">
-          <i class="bi bi-geo-alt me-1" style="color:var(--pv-accent)"></i>
-          Parcels at {{ location.LocationName }}
-        </h6>
-        {% for p in parcels %}
-        <div class="form-check mb-2">
-          <input class="form-check-input" type="checkbox"
-                 name="parcel_ids" value="{{ p.ParcelID }}"
-                 id="p{{ p.ParcelID }}" checked>
-          <label class="form-check-label" for="p{{ p.ParcelID }}">
-            <code style="color:var(--pv-accent)">{{ p.TrackingNumber }}</code>
-            <span class="text-secondary ms-2">{{ p.Recipient }}</span>
-            <span class="badge bg-secondary ms-1">{{ p.Shipper }}</span>
-          </label>
-        </div>
-        {% endfor %}
-      </div>
-
-      {% if parcels %}
-      <!-- Signed by + proof -->
-      <div class="pv-card mb-3">
-        <div class="mb-3">
-          <label class="form-label">
-            Delivered By <span class="text-danger">*</span>
-          </label>
-          <input type="text" class="form-control" name="signed_by"
-                 placeholder="Employee name" autofocus>
-        </div>
-
-        <!-- Proof tabs -->
-        <ul class="nav nav-tabs mb-3" id="proof-tabs">
-          <li class="nav-item">
-            <button class="nav-link active" type="button"
-                    data-bs-toggle="tab" data-bs-target="#tab-sig">
-              <i class="bi bi-pen me-1"></i>Signature
-            </button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" type="button"
-                    data-bs-toggle="tab" data-bs-target="#tab-photo">
-              <i class="bi bi-camera me-1"></i>Photo
-            </button>
-          </li>
-        </ul>
-
-        <div class="tab-content">
-          <!-- Signature tab -->
-          <div class="tab-pane fade show active" id="tab-sig">
-            <canvas id="signature-canvas"
-                    style="width:100%;height:180px;border:1px solid #dee2e6;
-                           border-radius:6px;background:#fff;touch-action:none">
-            </canvas>
-            <input type="hidden" name="signature_data" id="signature_data">
-            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
-                    id="sig-clear">
-              <i class="bi bi-eraser me-1"></i>Clear
-            </button>
-          </div>
-
-          <!-- Photo tab -->
-          <div class="tab-pane fade" id="tab-photo">
-            <input type="hidden" name="photo_data" id="photo_data">
-            <div class="text-center py-3">
-              <button type="button" class="btn btn-outline-primary"
-                      id="capture-proof-photo-btn">
-                <i class="bi bi-camera me-2"></i>Take Delivery Photo
-              </button>
-              <img id="proof-photo-preview"
-                   style="display:none;max-height:200px;border-radius:8px;
-                          margin-top:12px;border:1px solid #dee2e6">
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <button type="submit" class="btn btn-success px-5">
-        <i class="bi bi-check-lg me-1"></i>Confirm Delivery
-      </button>
-      <a href="{{ url_for('deliver_scan') }}"
-         class="btn btn-outline-secondary ms-2">
-        <i class="bi bi-arrow-counterclockwise me-1"></i>Scan Again
-      </a>
-      {% else %}
-      <div class="alert alert-warning">
-        <i class="bi bi-exclamation-triangle-fill me-1"></i>
-        No parcels found at this location.
-        <a href="{{ url_for('deliver_scan') }}" class="alert-link ms-2">
-          Scan again
-        </a>
-      </div>
-      {% endif %}
-    </form>
-{% endif %}
+    {% endif %}
 
   </div>
+
+  {# Right col: queue #}
+  <div class="col-lg-7">
+    <div class="pv-card">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">
+          <i class="bi bi-collection me-2"></i>
+          Delivery Queue
+          <span class="badge bg-primary ms-1">{{ queue|length }}</span>
+        </h6>
+        {% if queue %}
+        <a href="{{ url_for('deliver_scan') }}?clear=1"
+           class="btn btn-sm btn-outline-danger"
+           onclick="return confirm('Clear the delivery queue?')">
+          <i class="bi bi-x-circle me-1"></i>Clear Queue
+        </a>
+        {% endif %}
+      </div>
+
+      {% if queue %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Tracking</th>
+              <th>Recipient</th>
+              <th>Carrier</th>
+              <th>Stored At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in queue %}
+            <tr>
+              <td><code class="small">{{ item.tracking }}</code></td>
+              <td class="small">{{ item.recipient }}</td>
+              <td>
+                <span class="badge bg-secondary">
+                  {{ item.shipper }}
+                </span>
+              </td>
+              <td class="small text-secondary">
+                {{ item.location_name }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-4 text-secondary">
+        <i class="bi bi-inbox display-6 d-block mb-2 opacity-50"></i>
+        No parcels queued yet. Scan a tracking number to begin.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
 </div>
+{% endif %}
+
+{# ── CONFIRM STATE — location scanned, show proof UI ── #}
+{% if state == 'confirm' %}
+<div class="pv-card mt-3">
+  <h6 class="mb-3">
+    <i class="bi bi-geo-alt-fill me-2"></i>
+    Delivering to: <strong>{{ location.LocationName }}</strong>
+  </h6>
+
+  {# Location mismatch warning #}
+  {% if mismatches %}
+  <div class="alert alert-warning py-2 mb-3">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>{{ mismatches|length }} parcel(s)</strong> were stored
+    at a different location. Their delivery location will be
+    updated to <strong>{{ location.LocationName }}</strong>.
+    <ul class="mb-0 mt-1 small">
+      {% for m in mismatches %}
+      <li>
+        <code>{{ m.tracking }}</code>
+        — was at {{ m.location_name }}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post">
+    <input type="hidden" name="action" value="confirm">
+    <input type="hidden" name="location_id"
+           value="{{ location.LocationID }}">
+
+    {# Proof section — optional #}
+    <div class="mb-3">
+      <label class="form-label">
+        Delivered By
+        <span class="text-secondary small ms-1">(optional)</span>
+      </label>
+      <input type="text" class="form-control"
+             name="signed_by"
+             placeholder="Employee or recipient name">
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+      <li class="nav-item">
+        <button class="nav-link active" type="button"
+                data-bs-toggle="tab"
+                data-bs-target="#proof-sig">
+          <i class="bi bi-pen me-1"></i>Signature
+          <span class="text-secondary small ms-1">(optional)</span>
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" type="button"
+                data-bs-toggle="tab"
+                data-bs-target="#proof-photo">
+          <i class="bi bi-camera me-1"></i>Photo
+          <span class="text-secondary small ms-1">(optional)</span>
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content mb-3">
+      <div class="tab-pane fade show active" id="proof-sig">
+        <canvas id="signature-canvas"
+                style="width:100%;height:180px;
+                       border:1px solid #dee2e6;
+                       border-radius:6px;background:#fff;
+                       touch-action:none"></canvas>
+        <input type="hidden" name="signature_data"
+               id="signature_data">
+        <button type="button"
+                class="btn btn-sm btn-outline-secondary mt-2"
+                id="sig-clear">
+          <i class="bi bi-eraser me-1"></i>Clear
+        </button>
+      </div>
+      <div class="tab-pane fade" id="proof-photo">
+        <input type="hidden" name="photo_data" id="photo_data">
+        <div class="text-center py-3">
+          <button type="button" class="btn btn-outline-primary"
+                  id="capture-proof-photo-btn">
+            <i class="bi bi-camera me-2"></i>Take Delivery Photo
+          </button>
+          <img id="proof-photo-preview"
+               style="display:none;max-height:200px;
+                      border-radius:8px;margin-top:12px">
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-success px-5">
+        <i class="bi bi-check-lg me-1"></i>
+        Confirm Delivery ({{ queue|length }} parcel{{ 's' if queue|length != 1 else '' }})
+      </button>
+      <a href="{{ url_for('deliver_scan') }}"
+         class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back
+      </a>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/components/scanner.js') }}"></script>
 <script>
 (function () {
-  // ── QR scan button ────────────────────────────────────────────
-  var scanBtn = document.getElementById('scan-location-btn');
-  if (scanBtn) {
-    scanBtn.addEventListener('click', function () {
+  // Step 1: camera scan for tracking number
+  var scanTnBtn = document.getElementById('scan-tn-btn');
+  if (scanTnBtn) {
+    scanTnBtn.addEventListener('click', function () {
       PvScanner.open({
-        mode: 'qr',
-        onResult: function (raw) {
-          var match = raw.match(/^PVLOC:(\d+)$/);
-          if (!match) {
-            document.getElementById('scan-location-status').textContent =
-              'Invalid QR code. Please scan a ParcelVault location code.';
-            return;
-          }
-          var form = document.createElement('form');
-          form.method = 'POST';
-          form.action = '';
-          [['action', 'location_scanned'], ['location_id', match[1]]].forEach(function (pair) {
-            var inp = document.createElement('input');
-            inp.type = 'hidden';
-            inp.name = pair[0];
-            inp.value = pair[1];
-            form.appendChild(inp);
-          });
-          document.body.appendChild(form);
-          form.submit();
+        mode: 'barcode',
+        onResult: function (trackingNumber) {
+          if (!trackingNumber) return;
+          document.getElementById('deliver-tn-input').value = trackingNumber;
+          document.getElementById('scan-tn-form').submit();
         }
       });
     });
   }
 
-  // ── Signature pad ─────────────────────────────────────────────
+  // Step 2: QR scan for destination location
+  var scanLocBtn = document.getElementById('scan-location-btn');
+  if (scanLocBtn) {
+    scanLocBtn.addEventListener('click', function () {
+      PvScanner.open({
+        mode: 'qr',
+        onResult: function (raw) {
+          var match = raw.match(/^PVLOC:(\d+)$/);
+          if (!match) {
+            alert('Invalid QR code. Please scan a ParcelVault location QR code.');
+            return;
+          }
+          document.getElementById('scanned-location-id').value = match[1];
+          document.getElementById('scan-location-form').submit();
+        }
+      });
+    });
+  }
+
+  // Signature pad
   var canvas = document.getElementById('signature-canvas');
   if (canvas) {
     var ctx = canvas.getContext('2d');
@@ -186,8 +274,10 @@
     function _pos(e) {
       var r = canvas.getBoundingClientRect();
       var src = e.touches ? e.touches[0] : e;
-      return { x: (src.clientX - r.left) * (canvas.width / r.width),
-               y: (src.clientY - r.top)  * (canvas.height / r.height) };
+      return {
+        x: (src.clientX - r.left) * (canvas.width / r.width),
+        y: (src.clientY - r.top)  * (canvas.height / r.height)
+      };
     }
 
     function _resize() {
@@ -203,13 +293,13 @@
 
     canvas.addEventListener('mousedown',  function (e) { drawing = true; ctx.beginPath(); var p = _pos(e); ctx.moveTo(p.x, p.y); });
     canvas.addEventListener('mousemove',  function (e) { if (!drawing) return; var p = _pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
-    canvas.addEventListener('mouseup',    function ()  { drawing = false; _saveSignature(); });
+    canvas.addEventListener('mouseup',    function ()  { drawing = false; _saveSig(); });
     canvas.addEventListener('mouseleave', function ()  { drawing = false; });
     canvas.addEventListener('touchstart', function (e) { e.preventDefault(); drawing = true; ctx.beginPath(); var p = _pos(e); ctx.moveTo(p.x, p.y); }, { passive: false });
     canvas.addEventListener('touchmove',  function (e) { e.preventDefault(); if (!drawing) return; var p = _pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
-    canvas.addEventListener('touchend',   function ()  { drawing = false; _saveSignature(); });
+    canvas.addEventListener('touchend',   function ()  { drawing = false; _saveSig(); });
 
-    function _saveSignature() {
+    function _saveSig() {
       document.getElementById('signature_data').value = canvas.toDataURL('image/png');
     }
 
@@ -222,10 +312,10 @@
     }
   }
 
-  // ── Proof photo capture ───────────────────────────────────────
-  var captureBtn = document.getElementById('capture-proof-photo-btn');
-  if (captureBtn) {
-    captureBtn.addEventListener('click', function () {
+  // Delivery photo capture
+  var photoBtn = document.getElementById('capture-proof-photo-btn');
+  if (photoBtn) {
+    photoBtn.addEventListener('click', function () {
       PvScanner.open({
         mode: 'photo',
         onResult: function (dataUrl) {
@@ -233,7 +323,7 @@
           var prev = document.getElementById('proof-photo-preview');
           prev.src = dataUrl;
           prev.style.display = 'block';
-          captureBtn.innerHTML = '<i class="bi bi-camera me-2"></i>Retake Photo';
+          photoBtn.innerHTML = '<i class="bi bi-camera me-2"></i>Retake Photo';
         }
       });
     });
