@@ -83,9 +83,6 @@
         <tr onclick="window.location='{{ url_for('parcel_detail', parcel_id=p.ParcelID) }}'">
           <td data-label="Tracking #">
             <code style="color:var(--pv-accent);font-size:0.85rem">{{ p.TrackingNumber }}</code>
-            {% if p.BatchNumber %}
-            <span class="badge bg-secondary font-monospace ms-1" style="font-size:0.7rem">{{ p.BatchNumber }}</span>
-            {% endif %}
           </td>
           <td data-label="Carrier">{{ p.Shipper }}</td>
           <td data-label="Recipient">{{ p.Recipient }}</td>
