@@ -89,10 +89,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/utils/trackingParser.js') }}"></script>
-<script src="{{ url_for('static', filename='js/services/barcodeService.js') }}"></script>
-<script src="{{ url_for('static', filename='js/services/ocrService.js') }}"></script>
-<script src="{{ url_for('static', filename='js/components/scanner.js') }}"></script>
 <script>
   document.getElementById('scan-label-btn').addEventListener('click', function () {
     PvScanner.open({
