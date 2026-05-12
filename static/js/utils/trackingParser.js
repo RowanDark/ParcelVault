@@ -29,8 +29,10 @@
     },
     {
       carrier: 'FedEx',
-      // 12, 15, 20, or 22 pure-digit strings (ground/express/smartpost)
-      regex: /\b(\d{22}|\d{20}|\d{15}|\d{12})\b/g,
+      // 12, 15, 20, or 22 pure-digit strings (ground/express/smartpost).
+      // Use (?<!\d)/(?!\d) instead of \b: raw Code 128 barcode strings
+      // contain spaces/parens adjacent to digits where \b fails to anchor.
+      regex: /(?<!\d)(\d{22}|\d{20}|\d{15}|\d{12})(?!\d)/g,
     },
     {
       carrier: 'DHL',
@@ -59,16 +61,50 @@
     return s;
   }
 
+  // ── FedEx barcode string pre-processors ──────────────────────
+
+  // FedEx Code 128 barcodes decode with routing prefix and parenthesized groups,
+  // e.g. "96220019 0 (000 000 0000) 0 00 2724 83686596" (Ground)
+  //   or "0201 7946 4542 8546"                           (Express).
+  // Collect all digit groups from the string and work backwards from the end,
+  // concatenating groups until we hit a valid FedEx tracking-number length
+  // (12, 15, 20, or 22 digits). This correctly isolates the tracking number
+  // regardless of how many routing/filler digits precede it.
+  function stripFedExPrefix(text) {
+    var groups = text.replace(/[^\d\s]/g, ' ').match(/\d+/g);
+    if (!groups) return text;
+    var acc = '';
+    for (var i = groups.length - 1; i >= 0; i--) {
+      acc = groups[i] + acc;
+      if (acc.length === 12 || acc.length === 15 ||
+          acc.length === 20 || acc.length === 22) {
+        return acc;
+      }
+      if (acc.length > 22) break;
+    }
+    return text;
+  }
+
   // ── Extract all tracking-number candidates ───────────────────
   function extractTracking(text) {
     const normalized = normalizeText(text);
     const compacted  = compactDigits(normalized);
+    // Apply FedEx prefix stripping to the un-compacted normalized text so that
+    // space-separated digit groups (e.g. "2724 83686596") are still distinct
+    // and can be combined correctly by stripFedExPrefix.
+    const fedexStripped = stripFedExPrefix(normalized);
 
     const candidates = [];
     const seen = new Set();
 
     for (const { carrier, regex } of CARRIER_PATTERNS) {
-      for (const src of [normalized, compacted]) {
+      // FedEx: use fedexStripped (rightmost-N-digit extraction) instead of
+      // compacted to avoid merging routing-prefix zeros into the tracking number
+      // (e.g. compacting "0 00 2724 83686596" would yield "000272483686596").
+      const sources = carrier === 'FedEx'
+        ? [normalized, fedexStripped]
+        : [normalized, compacted];
+      for (const src of sources) {
         const re = new RegExp(regex.source, regex.flags);
         let match;
         while ((match = re.exec(src)) !== null) {

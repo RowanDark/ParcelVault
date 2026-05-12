@@ -94,6 +94,30 @@ test('extracts a FedEx 15-digit tracking number', function () {
     'should extract 15-digit FedEx number');
 });
 
+test('extracts FedEx tracking from Code 128 barcode with routing prefix and parens (Label 1)', function () {
+  // Raw decode of FedEx Ground Code 128 bottom barcode
+  const raw = '96220019 0 (000 000 0000) 0 00 2724 83686596';
+  const r = TrackingParser.extractTracking(raw);
+  assert(r.some(function (c) { return c.tracking === '272483686596' && c.carrier === 'FedEx'; }),
+    'should strip routing prefix/parens and extract 12-digit FedEx tracking number');
+});
+
+test('extracts FedEx tracking from Express barcode with 0201 prefix (Label 2)', function () {
+  // Raw decode of FedEx Express Code 128 label with Express prefix
+  const raw = '0201 7946 4542 8546';
+  const r = TrackingParser.extractTracking(raw);
+  assert(r.some(function (c) { return c.carrier === 'FedEx'; }),
+    'should extract a FedEx tracking number from Express label prefix string');
+});
+
+test('FedEx regex does not false-match USPS 22-digit numbers', function () {
+  const r = TrackingParser.extractTracking('9400111899223456789000');
+  assert(!r.some(function (c) { return c.carrier === 'FedEx'; }),
+    'USPS 22-digit number should not be detected as FedEx');
+  assert(r.some(function (c) { return c.carrier === 'USPS'; }),
+    'USPS number should be detected as USPS');
+});
+
 test('extracts a DHL international tracking number', function () {
   const r = TrackingParser.extractTracking('DHL ref JD014600006962DE');
   assert(r.some(function (c) { return c.tracking === 'JD014600006962DE'; }),
