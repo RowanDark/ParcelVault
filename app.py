@@ -305,12 +305,8 @@ def deliver(parcel_id):
         return redirect(url_for('parcel_list'))
 
     if request.method == 'POST':
-        signed_by = request.form.get('signed_by', '').strip()
+        signed_by = request.form.get('signed_by', '').strip() or None
         sig_data  = request.form.get('signature_data', '').strip()
-
-        if not signed_by:
-            flash('Recipient name (Signed By) is required before confirming delivery.', 'error')
-            return render_template('deliver.html', parcel=parcel)
 
         db.execute(
             """UPDATE tbl_Parcels
@@ -322,10 +318,9 @@ def deliver(parcel_id):
              parcel_id),
         )
         log_history(db, 'Delivered', parcel['TrackingNumber'],
-                    parcel['Shipper'], signed_by, parcel['LocationID'])
+                    parcel['Shipper'], signed_by or get_username(), parcel['LocationID'])
         db.commit()
-        flash(f'Delivery confirmed for {parcel["TrackingNumber"]}. Signed by: {signed_by}',
-              'success')
+        flash(f'Delivery confirmed for {parcel["TrackingNumber"]}.', 'success')
         return redirect(url_for('parcel_list'))
 
     return render_template('deliver.html', parcel=parcel)
