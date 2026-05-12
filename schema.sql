@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS tbl_Parcels (
     Status         TEXT    NOT NULL DEFAULT 'In Storage',
     Notes          TEXT,
     ReceivedBy     TEXT,
+    HandledBy      TEXT,
     PackagePhoto   TEXT,
     DeliveredDate  TEXT,
     DeliveredTo    TEXT,

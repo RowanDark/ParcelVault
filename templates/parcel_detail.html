@@ -44,6 +44,12 @@
           <div class="detail-label">Received By</div>
           <div class="detail-value">{{ parcel.ReceivedBy or '—' }}</div>
         </div>
+        {% if parcel.HandledBy %}
+        <div class="col-sm-6">
+          <div class="detail-label">Handled By</div>
+          <div class="detail-value">{{ parcel.HandledBy }}</div>
+        </div>
+        {% endif %}
         {% if parcel.Notes %}
         <div class="col-12">
           <div class="detail-label">Notes</div>
