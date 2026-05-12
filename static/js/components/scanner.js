@@ -43,6 +43,13 @@
     '          <div class="p-3 text-center">',
     '            <p class="text-secondary small mb-2">Position the shipping label within the frame for auto barcode scanning. If needed, tap Capture for OCR fallback.</p>',
     '            <p id="pv-barcode-status" class="small text-secondary mb-2">Initializing camera…</p>',
+    '            <div id="pv-zoom-control" style="display:none;padding: 0 16px 8px;">',
+    '              <label class="form-label small text-secondary mb-1">',
+    '                <i class="bi bi-zoom-in me-1"></i>',
+    '                Zoom: <span id="pv-zoom-value">1.0x</span>',
+    '              </label>',
+    '              <input type="range" class="form-range" id="pv-zoom-slider" min="1" max="3" step="0.1" value="1">',
+    '            </div>',
     '            <div id="pv-debug-overlay" class="small text-start border rounded p-2 mb-2 bg-light">',
     '              <div><strong>Resolution:</strong> <span id="pv-debug-resolution">-</span></div>',
     '              <div><strong>Scan FPS:</strong> <span id="pv-debug-fps">0</span></div>',
@@ -266,6 +273,21 @@
       _stream.getTracks().forEach(function (t) { t.stop(); });
     }
     _stream = null;
+    var zoomVideo = document.querySelector('#pv-scan-reader video');
+    if (zoomVideo && zoomVideo.srcObject) {
+      var zoomTracks = zoomVideo.srcObject.getVideoTracks();
+      if (zoomTracks && zoomTracks.length) {
+        var zoomTrack = zoomTracks[0];
+        if (zoomTrack.getCapabilities) {
+          var zoomCaps = zoomTrack.getCapabilities();
+          if (zoomCaps.zoom) {
+            zoomTrack.applyConstraints({
+              advanced: [{ zoom: zoomCaps.zoom.min || 1 }]
+            }).catch(function() {});
+          }
+        }
+      }
+    }
     if (_html5Scanner && _html5Scanner.stop) {
       _html5Scanner.stop().catch(function () {}).finally(function () {
         if (_html5Scanner && _html5Scanner.clear) _html5Scanner.clear().catch(function () {});
@@ -441,20 +463,16 @@
     }, 5000);
 
     console.info('[Scanner] start() invocation');
-    _html5Scanner.start({ facingMode: "environment" }, { fps: 10, formatsToSupport: formats, qrbox: function(vw, vh) {
-        // html5-qrcode scales qrbox from element space to video space internally.
-        // Using 0.60 of element dimensions gives enough headroom that after typical
-        // scaling (1.0x – 1.5x) the result stays safely under the video feed size,
-        // preventing the silent decode failure caused by qrbox exceeding video bounds.
+    _html5Scanner.start({ facingMode: "environment" }, { fps: 15, formatsToSupport: formats, qrbox: function(vw, vh) {
         if (_mode === 'qr') {
           var size = Math.floor(Math.min(vw, vh) * 0.60);
           return { width: size, height: size };
         }
-        // Barcode mode: wide rectangle, capped safely
-        var w = Math.floor(vw * 0.60);
-        var h = Math.floor(vh * 0.35);
-        // Hard floor so very small modals still give a usable target
-        w = Math.max(w, 200);
+        // 90% width captures the full barcode including guard bars (critical for Code 128).
+        // Height kept narrow to reduce noise from label text above/below the barcode.
+        // Cap at vw-20 to always stay within video bounds.
+        var w = Math.min(Math.floor(vw * 0.90), vw - 20);
+        var h = Math.floor(vh * 0.25);
         h = Math.max(h, 80);
         return { width: w, height: h };
       } },
@@ -485,26 +503,63 @@
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
       console.info('[Scanner] start() resolved — rear camera');
-
-      // TEMP DIAGNOSTIC — remove after fix confirmed
-      setTimeout(function() {
-        var readerEl = document.getElementById('pv-scan-reader');
-        var video = document.querySelector('#pv-scan-reader video');
-        console.info('[Scanner] Diagnostic after 2s:', {
-          readerEl_exists:  !!readerEl,
-          readerEl_width:   readerEl ? readerEl.getBoundingClientRect().width : 0,
-          readerEl_height:  readerEl ? readerEl.getBoundingClientRect().height : 0,
-          video_exists:     !!video,
-          video_width:      video ? video.videoWidth : 0,
-          video_height:     video ? video.videoHeight : 0,
-          video_readyState: video ? video.readyState : -1,
-        });
-      }, 2000);
+      if (_mode === 'barcode') {
+        setTimeout(function() {
+          _applyZoomIfSupported();
+          _initZoomControl();
+        }, 500);
+      }
     }).catch(function (err) {
       settled = true;
       if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
       console.error('[Scanner] start() rejection', err);
       _showError('Failed to start html5-qrcode scanner: ' + err);
+    });
+  }
+
+  function _applyZoomIfSupported() {
+    var video = document.querySelector('#pv-scan-reader video');
+    if (!video || !video.srcObject) return;
+    var tracks = video.srcObject.getVideoTracks();
+    if (!tracks || !tracks.length) return;
+    var track = tracks[0];
+    if (!track.getCapabilities || !track.applyConstraints) return;
+    var caps = track.getCapabilities();
+    if (!caps.zoom) return;
+    var targetZoom = Math.min(1.8, caps.zoom.max);
+    targetZoom = Math.max(targetZoom, caps.zoom.min || 1);
+    track.applyConstraints({
+      advanced: [{ zoom: targetZoom }]
+    }).catch(function() {});
+  }
+
+  function _initZoomControl() {
+    var video = document.querySelector('#pv-scan-reader video');
+    if (!video || !video.srcObject) return;
+    var tracks = video.srcObject.getVideoTracks();
+    if (!tracks || !tracks.length) return;
+    var track = tracks[0];
+    if (!track.getCapabilities) return;
+    var caps = track.getCapabilities();
+    if (!caps.zoom) return;
+
+    var slider = document.getElementById('pv-zoom-slider');
+    var valueLabel = document.getElementById('pv-zoom-value');
+    var control = document.getElementById('pv-zoom-control');
+    if (!slider || !control) return;
+
+    slider.min   = caps.zoom.min || 1;
+    slider.max   = Math.min(caps.zoom.max || 3, 3);
+    slider.value = 1.8;
+    if (valueLabel) valueLabel.textContent = '1.8x';
+    control.style.display = '';
+
+    slider.addEventListener('input', function() {
+      var zoom = parseFloat(slider.value);
+      if (valueLabel) valueLabel.textContent = zoom.toFixed(1) + 'x';
+      track.applyConstraints({
+        advanced: [{ zoom: zoom }]
+      }).catch(function() {});
     });
   }
 
