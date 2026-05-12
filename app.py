@@ -32,7 +32,7 @@ DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'parcelvault
 
 CARRIERS = ['UPS', 'FedEx', 'USPS', 'Amazon', 'DHL', 'Other']
 STATUSES = ['In Storage', 'Delivered', 'Pending', 'Damaged']
-ACTIONS  = ['Received', 'Delivered', 'Batch Received', 'Batch Delivered', 'Modified']
+ACTIONS  = ['Received', 'Re-Received', 'Delivered', 'Modified']
 
 # ── Database helpers ──────────────────────────────────────────
 
@@ -195,14 +195,16 @@ def intake():
                 status = existing['Status']
                 if status == 'Delivered':
                     override_msg = (
-                        f'Tracking number {tn} was already delivered'
+                        f'Tracking number {tn} was previously delivered'
                         f'{" on " + existing["DeliveredDate"][:10] if existing["DeliveredDate"] else ""}. '
-                        f'Re-receive as a new delivery?'
+                        f'Override will reset this parcel to In Storage '
+                        f'with updated intake details.'
                     )
                 else:
                     override_msg = (
                         f'Tracking number {tn} is already in the system '
-                        f'({status}). Move or re-process this parcel?'
+                        f'with status: {status}. '
+                        f'Override will update the existing record.'
                     )
                 return render_template('intake.html',
                                        locations=locations,
@@ -216,6 +218,60 @@ def intake():
                 flash(e, 'error')
             return render_template('intake.html', locations=locations,
                                    carriers=CARRIERS, form=request.form)
+
+        if force and existing:
+            try:
+                if existing['Status'] == 'In Storage':
+                    flash(
+                        f'Parcel {tn} is already In Storage '
+                        f'({existing["Recipient"]}). '
+                        f'No changes made.',
+                        'info'
+                    )
+                    db.commit()
+                    return redirect(url_for('intake'))
+
+                db.execute(
+                    """UPDATE tbl_Parcels
+                       SET Status        = 'In Storage',
+                           Shipper       = ?,
+                           Recipient     = ?,
+                           LocationID    = ?,
+                           ReceivedDate  = ?,
+                           Notes         = ?,
+                           ReceivedBy    = ?,
+                           HandledBy     = ?,
+                           DeliveredDate = NULL,
+                           DeliveredTo   = NULL,
+                           SignaturePath = NULL,
+                           DeliveryPhoto = NULL
+                       WHERE TrackingNumber = ?""",
+                    (shipper,
+                     recipient if recipient else existing['Recipient'],
+                     int(location_id) if location_id else existing['LocationID'],
+                     recv_date.replace('T', ' '),
+                     notes,
+                     get_username(),
+                     handled_by,
+                     tn),
+                )
+                log_history(db, 'Re-Received', tn, shipper,
+                            recipient if recipient else existing['Recipient'],
+                            int(location_id) if location_id else existing['LocationID'])
+                db.commit()
+                flash(f'Parcel {tn} re-received and reset to In Storage.', 'success')
+                return redirect(url_for('intake'))
+            except Exception as e:
+                app.logger.error(f'Override error for {tn}: {e}')
+                flash(
+                    f'An error occurred processing the override for {tn}. '
+                    f'Please try again or contact support.',
+                    'error'
+                )
+                return render_template('intake.html',
+                                       locations=locations,
+                                       carriers=CARRIERS,
+                                       form=request.form)
 
         db.execute(
             """INSERT INTO tbl_Parcels
