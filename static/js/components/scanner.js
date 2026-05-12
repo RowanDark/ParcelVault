@@ -538,12 +538,13 @@
             if (!_frameLoopActive) return;
             if (results && results.length > 0) {
               var raw = results[0].rawValue;
+              var fmt = results[0].format;
               _diag.successes += 1;
               if (_diag.firstDecodeMs == null) {
                 _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
               }
               _frameLoopActive = false;
-              _handleDecodeResult(raw);
+              _handleDecodeResult(raw, fmt);
             } else {
               _diag.failures += 1;
               scheduleFrame();
@@ -594,8 +595,81 @@
     scheduleFrame();
   }
 
-  function _handleDecodeResult(raw) {
-    _signalScanSuccess();
+  // Extract a FedEx tracking number directly from a raw Code 128 barcode string,
+  // before compactDigits() runs. FedEx Ground rawValues look like:
+  //   "96220019 0 (000 000 0000) 0 00 2724 83686596"
+  // FedEx Express may look like: "0201 7946 4542 8546"
+  // The tracking number is always composed of the rightmost digit groups.
+  function _extractFedExFromRaw(raw) {
+    if (!raw) return null;
+
+    // Step 1: remove parenthetical routing groups
+    var cleaned = raw.replace(/\([^)]*\)/g, ' ');
+
+    // Step 2: collapse whitespace
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+
+    // Guard: if non-digit non-space chars remain (e.g. UPS "1Z…", DHL "JD…DE"),
+    // this is not a FedEx Code 128 barcode — let the standard pipeline handle it.
+    if (/[^\d\s]/.test(cleaned)) return null;
+
+    // Step 3: split on spaces, get last token
+    var parts = cleaned.split(' ');
+    var last = parts[parts.length - 1].replace(/\D/g, '');
+
+    // Step 3b: try last two tokens joined (handles "2724 83686596" split across two groups)
+    if (parts.length >= 2) {
+      var lastTwo = (parts[parts.length - 2] + parts[parts.length - 1]).replace(/\D/g, '');
+      if (/^\d{12}$/.test(lastTwo) || /^\d{15}$/.test(lastTwo) ||
+          /^\d{20}$/.test(lastTwo) || /^\d{22}$/.test(lastTwo)) {
+        return { tracking: lastTwo, carrier: 'FedEx' };
+      }
+    }
+
+    // Step 3c: try last three tokens joined (handles "7946 4542 8546" split across three groups)
+    if (parts.length >= 3) {
+      var lastThree = (parts[parts.length - 3] + parts[parts.length - 2] + parts[parts.length - 1]).replace(/\D/g, '');
+      if (/^\d{12}$/.test(lastThree) || /^\d{15}$/.test(lastThree)) {
+        return { tracking: lastThree, carrier: 'FedEx' };
+      }
+    }
+
+    // Step 4: validate last token alone
+    if (/^\d{12}$/.test(last) || /^\d{15}$/.test(last) ||
+        /^\d{20}$/.test(last) || /^\d{22}$/.test(last)) {
+      return { tracking: last, carrier: 'FedEx' };
+    }
+
+    // Step 5: try second-to-last token (some label formats have a trailing check digit group)
+    if (parts.length >= 2) {
+      var secondLast = parts[parts.length - 2].replace(/\D/g, '');
+      if (/^\d{12}$/.test(secondLast) || /^\d{15}$/.test(secondLast)) {
+        return { tracking: secondLast, carrier: 'FedEx' };
+      }
+    }
+
+    return null;
+  }
+
+  function _handleDecodeResult(raw, format) {
+    _diag.lastFormat = format || '-';
+
+    if (!raw || typeof raw !== 'string' || !raw.trim()) {
+      _frameLoopActive = true;
+      setTimeout(function() { _beginDecodeLoop(); }, 500);
+      return;
+    }
+
+    // Non-printable binary guard (DataMatrix safety net)
+    var nonPrintable = (raw.match(/[^\x20-\x7E]/g) || []).length;
+    if (nonPrintable / raw.length > 0.1) {
+      _frameLoopActive = true;
+      setTimeout(function() { _beginDecodeLoop(); }, 500);
+      return;
+    }
+
+    console.log('[Scanner] rawValue:', raw, 'format:', format);
+
     // QR/photo mode with onResult: pass raw decoded text directly to caller
     if (_onResult && (_mode === 'qr' || _mode === 'photo')) {
       _stopCamera();
@@ -604,12 +678,27 @@
       bootstrap.Modal.getOrCreateInstance(
         document.getElementById('pv-scanner-modal')
       ).hide();
+      _signalScanSuccess();
       cb(raw);
       return;
     }
+
+    // FedEx fast-path: extract tracking number directly from raw barcode string
+    // before compactDigits() can corrupt it by bleeding routing-prefix digits
+    var fedexDirect = _extractFedExFromRaw(raw);
+    if (fedexDirect) {
+      console.log('[Scanner] FedEx fast-path:', fedexDirect);
+      _signalScanSuccess();
+      _captureAndApplyCandidate(fedexDirect);
+      return;
+    }
+
+    // Standard pipeline for all other carriers
+    _signalScanSuccess();
     BarcodeService.normalizeDecodedText(raw)
       .then(function(candidates) {
         if (!candidates || !candidates.length) {
+          console.warn('[Scanner] No candidates from:', raw);
           _frameLoopActive = true;
           setTimeout(function() {
             _beginDecodeLoop();
