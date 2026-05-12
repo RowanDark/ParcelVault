@@ -138,13 +138,16 @@
 
   // ── Module state ─────────────────────────────────────────────
   var HTML5QRCODE_CDN = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  var ZBAR_CDN = 'https://cdn.jsdelivr.net/npm/zbar-wasm@0.10.1/dist/zbar.min.js';
   var _libraryLoadPromise = null;
+  var _zbarLoadPromise = null;
   var _stream         = null;
   var _capturedDataUrl = null;
   var _fieldConfig    = null;
   var _mode           = 'barcode'; // 'barcode' | 'qr' | 'any' | 'photo'
   var _onResult       = null;
   var _scanLoopHandle = null;
+  var _frameLoopActive = false;
   var _html5Scanner = null;
   var _lastScanAt = 0;
   var _startupTimeoutHandle = null;
@@ -174,6 +177,25 @@
       document.head.appendChild(script);
     });
     return _libraryLoadPromise;
+  }
+
+  function _ensureZbar() {
+    if (window.ZBar) return Promise.resolve();
+    if (_zbarLoadPromise) return _zbarLoadPromise;
+    _zbarLoadPromise = new Promise(function(resolve) {
+      var s = document.createElement('script');
+      s.src = ZBAR_CDN;
+      s.onload = function() {
+        _zbarLoadPromise = null;
+        resolve();
+      };
+      s.onerror = function() {
+        _zbarLoadPromise = null;
+        resolve(); // Don't reject — BarcodeDetector may still work
+      };
+      document.head.appendChild(s);
+    });
+    return _zbarLoadPromise;
   }
 
   function _safeBind(id, event, handler) {
@@ -236,6 +258,7 @@
     _diag.startAt = performance.now();
     _diag.firstDecodeMs = null;
     _diag.lastFormat = '-';
+    _frameLoopActive = false;
     _stream = true; // sentinel — signals camera is active to _captureAndApplyCandidate
     var statusEl = document.getElementById('pv-barcode-status');
     if (statusEl) statusEl.textContent = 'Loading scanner…';
@@ -243,9 +266,63 @@
       _startPhotoCamera();
       return;
     }
+    _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
     _ensureLibrary()
       .then(function() {
-        _beginHtml5Loop();
+        var readerEl = document.getElementById('pv-scan-reader');
+        if (!readerEl) { _showError('Scanner reader element not found.'); return; }
+        var rect = readerEl.getBoundingClientRect();
+        console.info('[Scanner] scanner init start');
+        console.info('[Scanner] reader dimensions', { width: Math.round(rect.width), height: Math.round(rect.height) });
+        if (rect.width <= 0 || rect.height <= 0) {
+          _showError('Scanner reader element has no dimensions — check CSS.');
+          return;
+        }
+
+        _updateDebugOverlay('html5-starting');
+        _html5Scanner = new Html5Qrcode('pv-scan-reader', { verbose: false });
+
+        var settled = false;
+        if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
+        _startupTimeoutHandle = setTimeout(function() {
+          if (settled) return;
+          console.error('[Scanner] start() timed out after 5 seconds');
+          _showError('Scanner failed to initialize');
+        }, 5000);
+
+        console.info('[Scanner] start() invocation');
+        _html5Scanner.start(
+          { facingMode: 'environment' },
+          { fps: 1, qrbox: function(vw, vh) {
+              if (_mode === 'qr') {
+                var size = Math.floor(Math.min(vw, vh) * 0.60);
+                return { width: size, height: size };
+              }
+              var w = Math.min(Math.floor(vw * 0.90), vw - 20);
+              var h = Math.max(Math.floor(vh * 0.25), 80);
+              return { width: w, height: h };
+          }},
+          function() {}, // no-op — we handle decoding in _beginDecodeLoop
+          function() {}  // no-op — suppress frame errors
+        ).then(function() {
+          settled = true;
+          if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
+          console.info('[Scanner] start() resolved — rear camera');
+          if (_mode === 'barcode') {
+            setTimeout(function() {
+              _applyZoomIfSupported();
+              _initZoomControl();
+            }, 500);
+          }
+          setTimeout(function() {
+            _beginDecodeLoop();
+          }, 300);
+        }).catch(function(err) {
+          settled = true;
+          if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
+          console.error('[Scanner] start() rejection', err);
+          _showError('Camera failed to start: ' + err);
+        });
       })
       .catch(function(err) {
         _stream = null;
@@ -262,6 +339,7 @@
       cancelAnimationFrame(_scanLoopHandle);
       _scanLoopHandle = null;
     }
+    _frameLoopActive = false;
     var photoVideo = document.getElementById('pv-photo-video');
     if (photoVideo) {
       photoVideo.srcObject = null;
@@ -390,131 +468,156 @@
     }
   }
 
-  function _beginHtml5Loop() {
-    var status = document.getElementById('pv-barcode-status');
-    var container = document.getElementById('pv-scan-preview');
-    if (!window.Html5Qrcode) { _showError('Scanning library not loaded. Please check your connection.'); return; }
-    if (!container) { _showError('Scanner container is missing.'); return; }
-
-    var readerEl = document.getElementById('pv-scan-reader');
-    if (!readerEl) {
-      _showError('Scanner reader element not found.');
-      return;
-    }
-    var rect = readerEl.getBoundingClientRect();
-    console.info('[Scanner] scanner init start');
-    console.info('[Scanner] reader dimensions', { width: Math.round(rect.width), height: Math.round(rect.height) });
-    if (rect.width <= 0 || rect.height <= 0) {
-      _showError('Scanner reader element has no dimensions — check CSS.');
+  function _beginDecodeLoop() {
+    var video = document.querySelector('#pv-scan-reader video');
+    if (!video) {
+      _showError('Camera feed not available.');
       return;
     }
 
-    _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
-    if (status) status.textContent = 'Scanning barcode…';
-    _updateDebugOverlay('html5-starting');
-    _html5Scanner = new Html5Qrcode('pv-scan-reader', {
-      experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true,
-      },
-      verbose: false,
-    });
-    var FORMAT_SETS = {
-      barcode: [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.PDF_417,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.EAN_13,
-      ],
-      qr: [
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-      ],
-      photo: [
-        Html5QrcodeSupportedFormats.QR_CODE,
-      ],
-      any: [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.QR_CODE,
-        Html5QrcodeSupportedFormats.PDF_417,
-        Html5QrcodeSupportedFormats.DATA_MATRIX,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.ITF,
-        Html5QrcodeSupportedFormats.EAN_13,
-      ],
-    };
-    var formats = FORMAT_SETS[_mode] || FORMAT_SETS.barcode;
+    var statusEl = document.getElementById('pv-barcode-status');
+    if (statusEl) statusEl.textContent = 'Scanning…';
+    _updateDebugOverlay('decode-loop-start');
 
-    // Photo mode: camera runs for live preview; capture button grabbed directly
-    if (_mode === 'photo') {
-      var captureBtn = document.getElementById('pv-capture-btn');
-      if (captureBtn) {
-        captureBtn.onclick = function () { _captureFrame(); };
+    var hasNativeDetector = typeof BarcodeDetector !== 'undefined';
+    var hasZbar = typeof window.ZBar !== 'undefined';
+
+    if (!hasNativeDetector && !hasZbar) {
+      _ensureZbar().then(function() {
+        _beginDecodeLoop();
+      });
+      return;
+    }
+
+    var detector = null;
+
+    if (hasNativeDetector) {
+      try {
+        detector = new BarcodeDetector({
+          formats: _mode === 'qr'
+            ? ['qr_code', 'data_matrix']
+            : ['code_128', 'code_39', 'pdf417',
+               'itf', 'ean_13', 'qr_code', 'data_matrix']
+        });
+      } catch(e) {
+        detector = null;
       }
     }
-    var settled = false;
 
-    if (_startupTimeoutHandle) clearTimeout(_startupTimeoutHandle);
-    _startupTimeoutHandle = setTimeout(function () {
-      if (settled) return;
-      console.error('[Scanner] start() timed out after 5 seconds');
-      _showError('Scanner failed to initialize');
-    }, 5000);
+    _frameLoopActive = true;
+    _scanLoopHandle = null;
 
-    console.info('[Scanner] start() invocation');
-    _html5Scanner.start({ facingMode: "environment" }, { fps: 15, formatsToSupport: formats, qrbox: function(vw, vh) {
-        if (_mode === 'qr') {
-          var size = Math.floor(Math.min(vw, vh) * 0.60);
-          return { width: size, height: size };
-        }
-        // 90% width captures the full barcode including guard bars (critical for Code 128).
-        // Height kept narrow to reduce noise from label text above/below the barcode.
-        // Cap at vw-20 to always stay within video bounds.
-        var w = Math.min(Math.floor(vw * 0.90), vw - 20);
-        var h = Math.floor(vh * 0.25);
-        h = Math.max(h, 80);
-        return { width: w, height: h };
-      } },
-      function (decodedText, decodedResult) {
-        _diag.attempts += 1; _diag.successes += 1;
-        if (_diag.firstDecodeMs == null) _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
-        _diag.lastFormat = decodedResult && decodedResult.result && decodedResult.result.format ? decodedResult.result.format.formatName : _diag.lastFormat;
-        _updateDebugOverlay('decode-success');
-        // QR/photo mode with onResult: pass raw decoded text directly to caller
-        if (_onResult && (_mode === 'qr' || _mode === 'photo')) {
-          _stopCamera();
-          _signalScanSuccess();
-          var cb = _onResult;
-          _onResult = null;
-          bootstrap.Modal.getOrCreateInstance(
-            document.getElementById('pv-scanner-modal')
-          ).hide();
-          cb(decodedText);
+    function scheduleFrame() {
+      if (!_frameLoopActive) return;
+      _scanLoopHandle = requestAnimationFrame(decodeFrame);
+    }
+
+    function decodeFrame() {
+      if (!_frameLoopActive) return;
+      if (!video.videoWidth || video.readyState < 2) {
+        scheduleFrame();
+        return;
+      }
+
+      _diag.frames += 1;
+      _diag.attempts += 1;
+
+      var now = performance.now();
+      if (now - _diag.lastFpsAt >= 1000) {
+        _diag.fps = Math.round(
+          _diag.frames * 1000 / (now - _diag.lastFpsAt)
+        );
+        _diag.frames = 0;
+        _diag.lastFpsAt = now;
+        _updateDebugOverlay('fps-update');
+      }
+
+      if (detector) {
+        detector.detect(video)
+          .then(function(results) {
+            if (!_frameLoopActive) return;
+            if (results && results.length > 0) {
+              var raw = results[0].rawValue;
+              _diag.successes += 1;
+              if (_diag.firstDecodeMs == null) {
+                _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
+              }
+              _frameLoopActive = false;
+              _handleDecodeResult(raw);
+            } else {
+              _diag.failures += 1;
+              scheduleFrame();
+            }
+          })
+          .catch(function() {
+            _diag.failures += 1;
+            scheduleFrame();
+          });
+      } else if (hasZbar) {
+        var canvas = document.getElementById('pv-scan-canvas');
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        window.ZBar.scanImageData(imageData)
+          .then(function(results) {
+            if (!_frameLoopActive) return;
+            if (results && results.length > 0) {
+              var raw = results[0].decode();
+              _diag.successes += 1;
+              if (_diag.firstDecodeMs == null) {
+                _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
+              }
+              _frameLoopActive = false;
+              _handleDecodeResult(raw);
+            } else {
+              _diag.failures += 1;
+              scheduleFrame();
+            }
+          })
+          .catch(function() {
+            _diag.failures += 1;
+            scheduleFrame();
+          });
+      } else {
+        scheduleFrame();
+      }
+    }
+
+    // Load zbar in background for fallback readiness even if BarcodeDetector is available
+    _ensureZbar();
+
+    _diag.lastFpsAt = performance.now();
+    _diag.frames = 0;
+    scheduleFrame();
+  }
+
+  function _handleDecodeResult(raw) {
+    _signalScanSuccess();
+    // QR/photo mode with onResult: pass raw decoded text directly to caller
+    if (_onResult && (_mode === 'qr' || _mode === 'photo')) {
+      _stopCamera();
+      var cb = _onResult;
+      _onResult = null;
+      bootstrap.Modal.getOrCreateInstance(
+        document.getElementById('pv-scanner-modal')
+      ).hide();
+      cb(raw);
+      return;
+    }
+    BarcodeService.normalizeDecodedText(raw)
+      .then(function(candidates) {
+        if (!candidates || !candidates.length) {
+          _frameLoopActive = true;
+          setTimeout(function() {
+            _beginDecodeLoop();
+          }, 500);
           return;
         }
-        BarcodeService.normalizeDecodedText(decodedText).then(function (candidates) {
-          if (!candidates || !candidates.length || !_html5Scanner) return;
-          _captureAndApplyCandidate(candidates[0]);
-        });
-      },
-      function () { _diag.failures += 1; _updateDebugOverlay('decode-failed'); }
-    ).then(function () {
-      settled = true;
-      if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
-      console.info('[Scanner] start() resolved — rear camera');
-      if (_mode === 'barcode') {
-        setTimeout(function() {
-          _applyZoomIfSupported();
-          _initZoomControl();
-        }, 500);
-      }
-    }).catch(function (err) {
-      settled = true;
-      if (_startupTimeoutHandle) { clearTimeout(_startupTimeoutHandle); _startupTimeoutHandle = null; }
-      console.error('[Scanner] start() rejection', err);
-      _showError('Failed to start html5-qrcode scanner: ' + err);
-    });
+        _captureAndApplyCandidate(candidates[0]);
+      });
   }
 
   function _applyZoomIfSupported() {
