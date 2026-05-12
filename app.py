@@ -74,6 +74,11 @@ def ensure_db():
                 "ALTER TABLE tbl_Parcels ADD COLUMN DeliveryPhoto TEXT"
             )
             db.commit()
+        if 'HandledBy' not in cols:
+            db.execute(
+                "ALTER TABLE tbl_Parcels ADD COLUMN HandledBy TEXT"
+            )
+            db.commit()
 
 
 @app.cli.command('init-db')
@@ -157,6 +162,7 @@ def intake():
         recv_date   = request.form.get('received_date', '').strip() \
                       or datetime.now().strftime('%Y-%m-%dT%H:%M')
         notes       = request.form.get('notes', '').strip()
+        handled_by  = request.form.get('handled_by', '').strip() or None
 
         errors = []
         if not tn:
@@ -185,11 +191,11 @@ def intake():
         db.execute(
             """INSERT INTO tbl_Parcels
                (TrackingNumber, Shipper, Recipient, LocationID,
-                ReceivedDate, Status, Notes, ReceivedBy)
-               VALUES (?, ?, ?, ?, ?, 'In Storage', ?, ?)""",
+                ReceivedDate, Status, Notes, ReceivedBy, HandledBy)
+               VALUES (?, ?, ?, ?, ?, 'In Storage', ?, ?, ?)""",
             (tn, shipper, recipient,
              int(location_id) if location_id else None,
-             recv_date.replace('T', ' '), notes, get_username()),
+             recv_date.replace('T', ' '), notes, get_username(), handled_by),
         )
         log_history(db, 'Received', tn, shipper, recipient,
                     int(location_id) if location_id else None)
