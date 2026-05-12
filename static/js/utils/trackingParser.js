@@ -29,6 +29,14 @@
     },
     {
       carrier: 'FedEx',
+      // FedEx Ground 34-digit solid barcode — tracking number is last 12 digits.
+      // Must come before the general FedEx pattern to prevent the \d{22} branch
+      // from partially consuming the 34-digit string.
+      regex: /(?<!\d)(\d{34})(?!\d)/g,
+      transform: function(m) { return m.slice(-12); },
+    },
+    {
+      carrier: 'FedEx',
       // 12, 15, 20, or 22 pure-digit strings (ground/express/smartpost).
       // Use (?<!\d)/(?!\d) instead of \b: raw Code 128 barcode strings
       // contain spaces/parens adjacent to digits where \b fails to anchor.
@@ -101,7 +109,7 @@
     const candidates = [];
     const seen = new Set();
 
-    for (const { carrier, regex } of CARRIER_PATTERNS) {
+    for (const { carrier, regex, transform } of CARRIER_PATTERNS) {
       // FedEx: use fedexStripped (rightmost-N-digit extraction) instead of
       // compacted to avoid merging routing-prefix zeros into the tracking number
       // (e.g. compacting "0 00 2724 83686596" would yield "000272483686596").
@@ -112,7 +120,9 @@
         const re = new RegExp(regex.source, regex.flags);
         let match;
         while ((match = re.exec(src)) !== null) {
-          const value = match[1].toUpperCase().replace(/\s/g, '');
+          const raw_val = match[1];
+          const value = (transform ? transform(raw_val) : raw_val)
+            .toUpperCase().replace(/\s/g, '');
           if (!seen.has(value)) {
             seen.add(value);
             candidates.push({ tracking: value, carrier });

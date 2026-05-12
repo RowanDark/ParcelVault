@@ -110,6 +110,15 @@ test('extracts FedEx tracking from Express barcode with 0201 prefix (Label 2)', 
     'should extract a FedEx tracking number from Express label prefix string');
 });
 
+test('extracts FedEx tracking from 34-digit Ground barcode solid block', function () {
+  // Real FedEx Ground Code 128 raw scan: no spaces, 34 digits
+  // Tracking number = last 12 digits
+  const raw = '9622001900001326034300501688411140';
+  const r = TrackingParser.extractTracking(raw);
+  assert(r.some(function (c) { return c.tracking === '501688411140' && c.carrier === 'FedEx'; }),
+    'should extract last-12 digits as FedEx tracking from 34-digit barcode');
+});
+
 test('FedEx regex does not false-match USPS 22-digit numbers', function () {
   const r = TrackingParser.extractTracking('9400111899223456789000');
   assert(!r.some(function (c) { return c.carrier === 'FedEx'; }),

@@ -661,49 +661,63 @@
   // The tracking number is always composed of the rightmost digit groups.
   function _extractFedExFromRaw(raw) {
     if (!raw) return null;
+    var s = raw.trim().replace(/\s+/g, ' ');
 
-    // Step 1: remove parenthetical routing groups
-    var cleaned = raw.replace(/\([^)]*\)/g, ' ');
+    // Strategy 1: FedEx Ground 34-digit solid block
+    // Structure: 96 + 2 + 4 + 14 + 12(TN) — tracking number = last 12 digits
+    if (/^\d{34}$/.test(s)) {
+      var tn34 = s.slice(-12);
+      return { tracking: tn34, carrier: 'FedEx' };
+    }
 
-    // Step 2: collapse whitespace
-    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    // Strategy 2: FedEx Express 15-digit solid block — full 15 digits is the TN
+    if (/^\d{15}$/.test(s)) {
+      return { tracking: s, carrier: 'FedEx' };
+    }
 
-    // Guard: if non-digit non-space chars remain (e.g. UPS "1Z…", DHL "JD…DE"),
-    // this is not a FedEx Code 128 barcode — let the standard pipeline handle it.
-    if (/[^\d\s]/.test(cleaned)) return null;
+    // Strategy 3: FedEx 20 or 22-digit solid block
+    if (/^\d{22}$/.test(s) || /^\d{20}$/.test(s)) {
+      return { tracking: s, carrier: 'FedEx' };
+    }
 
-    // Step 3: split on spaces, get last token
+    // Strategy 4: FedEx 12-digit solid block (some Express labels encode just the TN)
+    if (/^\d{12}$/.test(s)) {
+      return { tracking: s, carrier: 'FedEx' };
+    }
+
+    // Strategy 5: space-separated string ending in TN
+    // Handles "96220019 0 (000 000 0000) 0 00 2724 83686596"
+    var cleaned = s.replace(/\([^)]*\)/g, ' ')
+                   .replace(/\s+/g, ' ')
+                   .trim();
     var parts = cleaned.split(' ');
-    var last = parts[parts.length - 1].replace(/\D/g, '');
 
-    // Step 3b: try last two tokens joined (handles "2724 83686596" split across two groups)
+    // Try last token alone
+    var last = parts[parts.length - 1].replace(/\D/g, '');
+    if (/^\d{12}$/.test(last) || /^\d{15}$/.test(last)) {
+      return { tracking: last, carrier: 'FedEx' };
+    }
+
+    // Try last two tokens joined
     if (parts.length >= 2) {
-      var lastTwo = (parts[parts.length - 2] + parts[parts.length - 1]).replace(/\D/g, '');
-      if (/^\d{12}$/.test(lastTwo) || /^\d{15}$/.test(lastTwo) ||
-          /^\d{20}$/.test(lastTwo) || /^\d{22}$/.test(lastTwo)) {
+      var lastTwo = (
+        parts[parts.length - 2] +
+        parts[parts.length - 1]
+      ).replace(/\D/g, '');
+      if (/^\d{12}$/.test(lastTwo) || /^\d{15}$/.test(lastTwo)) {
         return { tracking: lastTwo, carrier: 'FedEx' };
       }
     }
 
-    // Step 3c: try last three tokens joined (handles "7946 4542 8546" split across three groups)
+    // Try last three tokens joined
     if (parts.length >= 3) {
-      var lastThree = (parts[parts.length - 3] + parts[parts.length - 2] + parts[parts.length - 1]).replace(/\D/g, '');
+      var lastThree = (
+        parts[parts.length - 3] +
+        parts[parts.length - 2] +
+        parts[parts.length - 1]
+      ).replace(/\D/g, '');
       if (/^\d{12}$/.test(lastThree) || /^\d{15}$/.test(lastThree)) {
         return { tracking: lastThree, carrier: 'FedEx' };
-      }
-    }
-
-    // Step 4: validate last token alone
-    if (/^\d{12}$/.test(last) || /^\d{15}$/.test(last) ||
-        /^\d{20}$/.test(last) || /^\d{22}$/.test(last)) {
-      return { tracking: last, carrier: 'FedEx' };
-    }
-
-    // Step 5: try second-to-last token (some label formats have a trailing check digit group)
-    if (parts.length >= 2) {
-      var secondLast = parts[parts.length - 2].replace(/\D/g, '');
-      if (/^\d{12}$/.test(secondLast) || /^\d{15}$/.test(secondLast)) {
-        return { tracking: secondLast, carrier: 'FedEx' };
       }
     }
 
