@@ -56,6 +56,20 @@
     '              <div><strong>Formats:</strong> <span id="pv-debug-formats">-</span></div>',
     '              <div><strong>TTFD:</strong> <span id="pv-debug-ttfd">-</span></div>',
     '              <div><strong>Status:</strong> <span id="pv-debug-status">idle</span></div>',
+    '              <div id="pv-debug-log" style="' +
+    '  max-height:140px;' +
+    '  overflow-y:auto;' +
+    '  font-size:10px;' +
+    '  font-family:monospace;' +
+    '  border-top:1px solid #ccc;' +
+    '  margin-top:6px;' +
+    '  padding-top:4px;' +
+    '  word-break:break-all;' +
+    '  color:#111;' +
+    '  background:#f8f8f8;' +
+    '  padding:4px;' +
+    '  border-radius:4px' +
+    '"></div>',
     '            </div>',
     '            <div class="d-flex justify-content-center gap-2">',
     '            <button type="button" class="btn btn-primary px-5" id="pv-capture-btn">',
@@ -152,6 +166,24 @@
   var _lastScanAt = 0;
   var _startupTimeoutHandle = null;
   var _diag = { attempts: 0, failures: 0, successes: 0, fps: 0, lastFpsAt: 0, frames: 0, startAt: 0, firstDecodeMs: null, lastFormat: '-' };
+  var _logBuffer = [];
+
+  function _debugLog(msg, data) {
+    var line = msg + (data !== undefined
+      ? ' ' + JSON.stringify(data)
+      : '');
+    _logBuffer.push(line);
+    console.log('[Scanner]', line);
+    var panel = document.getElementById('pv-debug-log');
+    if (!panel) return;
+    panel.innerHTML = _logBuffer.slice(-8).map(function(l) {
+      return '<div style="border-bottom:1px solid #eee;' +
+             'padding:2px 0">' +
+             l.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+             '</div>';
+    }).join('');
+    panel.scrollTop = panel.scrollHeight;
+  }
 
   function _ensureLibrary() {
     if (window.Html5Qrcode) {
@@ -263,6 +295,7 @@
     var statusEl = document.getElementById('pv-barcode-status');
     if (statusEl) statusEl.textContent = 'Loading scanner…';
     if (_mode === 'photo') {
+      _debugLog('mode-photo-bypass');
       _startPhotoCamera();
       return;
     }
@@ -331,6 +364,8 @@
   }
 
   function _stopCamera() {
+    _debugLog('stop');
+    _logBuffer = [];
     if (_startupTimeoutHandle) {
       clearTimeout(_startupTimeoutHandle);
       _startupTimeoutHandle = null;
@@ -504,6 +539,19 @@
       }
     }
 
+    _debugLog('decode-engine', {
+      native: hasNativeDetector,
+      zbar: hasZbar,
+      mode: _mode
+    });
+
+    if (hasNativeDetector && typeof BarcodeDetector !== 'undefined'
+        && BarcodeDetector.getSupportedFormats) {
+      BarcodeDetector.getSupportedFormats().then(function(f) {
+        _debugLog('BD-formats', f);
+      });
+    }
+
     _frameLoopActive = true;
     _scanLoopHandle = null;
 
@@ -537,6 +585,11 @@
           .then(function(results) {
             if (!_frameLoopActive) return;
             if (results && results.length > 0) {
+              _debugLog('BD-hit', {
+                fmt:   results[0].format,
+                len:   (results[0].rawValue || '').length,
+                raw60: (results[0].rawValue || '').substring(0, 60),
+              });
               var raw = results[0].rawValue;
               var fmt = results[0].format;
               _diag.successes += 1;
@@ -566,7 +619,14 @@
           .then(function(results) {
             if (!_frameLoopActive) return;
             if (results && results.length > 0) {
-              var raw = results[0].decode();
+              var zbarRaw = results[0].decode
+                ? results[0].decode()
+                : String(results[0]);
+              _debugLog('ZB-hit', {
+                len:   (zbarRaw || '').length,
+                raw60: (zbarRaw || '').substring(0, 60),
+              });
+              var raw = zbarRaw;
               _diag.successes += 1;
               if (_diag.firstDecodeMs == null) {
                 _diag.firstDecodeMs = Math.round(performance.now() - _diag.startAt);
@@ -655,6 +715,7 @@
     _diag.lastFormat = format || '-';
 
     if (!raw || typeof raw !== 'string' || !raw.trim()) {
+      _debugLog('GUARD-empty', { raw: String(raw).substring(0, 30) });
       _frameLoopActive = true;
       setTimeout(function() { _beginDecodeLoop(); }, 500);
       return;
@@ -663,11 +724,17 @@
     // Non-printable binary guard (DataMatrix safety net)
     var nonPrintable = (raw.match(/[^\x20-\x7E]/g) || []).length;
     if (nonPrintable / raw.length > 0.1) {
+      _debugLog('GUARD-binary', { np: nonPrintable, len: raw.length });
       _frameLoopActive = true;
       setTimeout(function() { _beginDecodeLoop(); }, 500);
       return;
     }
 
+    _debugLog('RAW', {
+      len: raw.length,
+      val: raw.substring(0, 60),
+      fmt: format
+    });
     console.log('[Scanner] rawValue:', raw, 'format:', format);
 
     // QR/photo mode with onResult: pass raw decoded text directly to caller
@@ -686,6 +753,14 @@
     // FedEx fast-path: extract tracking number directly from raw barcode string
     // before compactDigits() can corrupt it by bleeding routing-prefix digits
     var fedexDirect = _extractFedExFromRaw(raw);
+    _debugLog('FEDEX-extract', {
+      parts: raw.replace(/\([^)]*\)/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .split(' ')
+                .slice(-4),
+      result: fedexDirect
+    });
     if (fedexDirect) {
       console.log('[Scanner] FedEx fast-path:', fedexDirect);
       _signalScanSuccess();
@@ -698,6 +773,7 @@
     BarcodeService.normalizeDecodedText(raw)
       .then(function(candidates) {
         if (!candidates || !candidates.length) {
+          _debugLog('NO-CANDS', { raw60: raw.substring(0, 60) });
           console.warn('[Scanner] No candidates from:', raw);
           _frameLoopActive = true;
           setTimeout(function() {
@@ -705,6 +781,10 @@
           }, 500);
           return;
         }
+        _debugLog('MATCH', {
+          tracking: candidates[0].tracking,
+          carrier:  candidates[0].carrier
+        });
         _captureAndApplyCandidate(candidates[0]);
       });
   }
