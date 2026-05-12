@@ -531,8 +531,7 @@
         detector = new BarcodeDetector({
           formats: _mode === 'qr'
             ? ['qr_code', 'data_matrix']
-            : ['code_128', 'code_39', 'pdf417',
-               'itf', 'ean_13', 'qr_code', 'data_matrix']
+            : ['code_128', 'pdf417']
         });
       } catch(e) {
         detector = null;
@@ -725,6 +724,13 @@
     var nonPrintable = (raw.match(/[^\x20-\x7E]/g) || []).length;
     if (nonPrintable / raw.length > 0.1) {
       _debugLog('GUARD-binary', { np: nonPrintable, len: raw.length });
+      _frameLoopActive = true;
+      setTimeout(function() { _beginDecodeLoop(); }, 500);
+      return;
+    }
+
+    if (raw.replace(/\s/g, '').length < 10) {
+      _debugLog('GUARD-short', { len: raw.length, val: raw });
       _frameLoopActive = true;
       setTimeout(function() { _beginDecodeLoop(); }, 500);
       return;
@@ -1049,8 +1055,9 @@
     var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
-    var modeFormats = { barcode: 'CODE_128, PDF_417, CODE_39, DATA_MATRIX, ITF, EAN_13', qr: 'QR_CODE, DATA_MATRIX', any: 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13' };
-    if (fmts) fmts.textContent = modeFormats[_mode] || modeFormats.barcode;
+    if (fmts) fmts.textContent = _mode === 'qr'
+      ? 'QR_CODE, DATA_MATRIX'
+      : 'CODE_128, PDF_417';
     if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
     if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
   }
