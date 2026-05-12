@@ -18,7 +18,22 @@
         const res  = await fetch(`/api/check-duplicate?tn=${encodeURIComponent(val)}`);
         const data = await res.json();
         if (warning) {
-          warning.style.display = data.duplicate ? 'block' : 'none';
+          if (data.duplicate) {
+            var msg = 'This tracking number already exists';
+            if (data.status === 'Delivered') {
+              msg += ' — already delivered';
+              if (data.delivered_date) {
+                msg += ' on ' + data.delivered_date.slice(0, 10);
+              }
+            } else {
+              msg += ' (' + data.status + ')';
+            }
+            msg += '. You can still save with an override.';
+            warning.textContent = msg;
+            warning.style.display = 'block';
+          } else {
+            warning.style.display = 'none';
+          }
         }
       } catch (_) {}
     }, 350);
