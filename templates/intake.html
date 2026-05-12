@@ -6,6 +6,44 @@
 
 <div class="row justify-content-center">
   <div class="col-lg-7">
+
+    {% if override_required %}
+    <div class="alert alert-warning border-warning mb-3" id="override-panel">
+      <div class="d-flex align-items-start gap-2">
+        <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+        <div class="flex-grow-1">
+          <strong>Duplicate Detected</strong>
+          <p class="mb-3 mt-1">{{ override_msg }}</p>
+          <form method="post">
+            <input type="hidden" name="tracking_number"
+                   value="{{ form.get('tracking_number', '') }}">
+            <input type="hidden" name="shipper"
+                   value="{{ form.get('shipper', '') }}">
+            <input type="hidden" name="recipient"
+                   value="{{ form.get('recipient', '') }}">
+            <input type="hidden" name="location_id"
+                   value="{{ form.get('location_id', '') }}">
+            <input type="hidden" name="received_date"
+                   value="{{ form.get('received_date', '') }}">
+            <input type="hidden" name="notes"
+                   value="{{ form.get('notes', '') }}">
+            <input type="hidden" name="handled_by"
+                   value="{{ form.get('handled_by', '') }}">
+            <input type="hidden" name="force_override" value="1">
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-warning">
+                <i class="bi bi-arrow-repeat me-1"></i>Yes, Override and Save
+              </button>
+              <a href="{{ url_for('intake') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-x me-1"></i>Cancel
+              </a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="pv-card">
       <form method="post" novalidate>
 

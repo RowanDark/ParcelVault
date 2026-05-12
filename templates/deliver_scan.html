@@ -9,6 +9,48 @@
 {# ── SCAN STATE — tracking scan + queue display ── #}
 {% if state in ('scan', 'confirm') %}
 
+{% if pending_override %}
+<div class="alert alert-warning mb-3">
+  <div class="d-flex align-items-start gap-2">
+    <i class="bi bi-exclamation-triangle-fill mt-1 flex-shrink-0"></i>
+    <div class="flex-grow-1">
+      <strong>
+        {% if pending_override.get('in_queue') %}
+          Already in Queue
+        {% else %}
+          Already Delivered
+        {% endif %}
+      </strong>
+      <p class="mb-2 mt-1">
+        <code>{{ pending_override.tn }}</code>
+        ({{ pending_override.recipient }})
+        {% if pending_override.get('delivered_date') %}
+          was delivered on {{ pending_override.delivered_date[:10] }}.
+        {% elif pending_override.get('in_queue') %}
+          is already in the delivery queue.
+        {% endif %}
+        Override and add to queue anyway?
+      </p>
+      <form method="post">
+        <input type="hidden" name="action" value="scan_tracking">
+        <input type="hidden" name="tracking_number"
+               value="{{ pending_override.tn }}">
+        <input type="hidden" name="force_override" value="1">
+        <div class="d-flex gap-2">
+          <button type="submit" class="btn btn-sm btn-warning">
+            <i class="bi bi-arrow-repeat me-1"></i>Yes, Add to Queue
+          </button>
+          <a href="{{ url_for('deliver_scan') }}?clear_override=1"
+             class="btn btn-sm btn-outline-secondary">
+            Cancel
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <div class="row g-3">
 
   {# Left col: scan input #}

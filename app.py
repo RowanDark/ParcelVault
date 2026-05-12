@@ -134,10 +134,19 @@ def check_duplicate():
     tn = request.args.get('tn', '').strip()
     if not tn:
         return jsonify({'duplicate': False})
-    cnt = get_db().execute(
-        'SELECT COUNT(*) AS n FROM tbl_Parcels WHERE TrackingNumber = ?', (tn,)
-    ).fetchone()['n']
-    return jsonify({'duplicate': cnt > 0, 'tracking_number': tn})
+    existing = get_db().execute(
+        'SELECT Status, Recipient, DeliveredDate FROM tbl_Parcels WHERE TrackingNumber = ?',
+        (tn,)
+    ).fetchone()
+    if not existing:
+        return jsonify({'duplicate': False, 'tracking_number': tn})
+    return jsonify({
+        'duplicate':      True,
+        'tracking_number': tn,
+        'status':         existing['Status'],
+        'recipient':      existing['Recipient'],
+        'delivered_date': existing['DeliveredDate'],
+    })
 
 
 # ── Single parcel intake (frm_Intake) ─────────────────────────
@@ -163,6 +172,7 @@ def intake():
                       or datetime.now().strftime('%Y-%m-%dT%H:%M')
         notes       = request.form.get('notes', '').strip()
         handled_by  = request.form.get('handled_by', '').strip() or None
+        force       = request.form.get('force_override', '').strip() == '1'
 
         errors = []
         if not tn:
@@ -173,14 +183,33 @@ def intake():
             recipient = 'Unknown'
 
         if not errors:
-            dup = db.execute(
-                'SELECT COUNT(*) AS n FROM tbl_Parcels WHERE TrackingNumber = ?', (tn,)
-            ).fetchone()['n']
-            if dup:
-                errors.append(
-                    f'DUPLICATE ENTRY: Tracking number {tn} already exists in the system. '
-                    f'Please verify the package and tracking number.'
-                )
+            existing = db.execute(
+                """SELECT ParcelID, Status, ReceivedDate, DeliveredDate,
+                          Recipient, LocationID
+                   FROM tbl_Parcels
+                   WHERE TrackingNumber = ?""",
+                (tn,)
+            ).fetchone()
+
+            if existing and not force:
+                status = existing['Status']
+                if status == 'Delivered':
+                    override_msg = (
+                        f'Tracking number {tn} was already delivered'
+                        f'{" on " + existing["DeliveredDate"][:10] if existing["DeliveredDate"] else ""}. '
+                        f'Re-receive as a new delivery?'
+                    )
+                else:
+                    override_msg = (
+                        f'Tracking number {tn} is already in the system '
+                        f'({status}). Move or re-process this parcel?'
+                    )
+                return render_template('intake.html',
+                                       locations=locations,
+                                       carriers=CARRIERS,
+                                       form=request.form,
+                                       override_required=True,
+                                       override_msg=override_msg)
 
         if errors:
             for e in errors:
@@ -569,6 +598,11 @@ def deliver_scan():
         session.pop('delivery_queue', None)
         return redirect(url_for('deliver_scan'))
 
+    # ── Clear pending override ────────────────────────────────────
+    if request.args.get('clear_override'):
+        session.pop('pending_override', None)
+        return redirect(url_for('deliver_scan'))
+
     if request.method == 'POST':
         action = request.form.get('action', '')
 
@@ -596,18 +630,33 @@ def deliver_scan():
                 )
                 return redirect(url_for('deliver_scan'))
 
-            if parcel['Status'] == 'Delivered':
-                flash(
-                    f'{tn} was already delivered'
-                    f'{" on " + parcel["DeliveredDate"][:10] if parcel["DeliveredDate"] else ""}.',
-                    'warning'
-                )
+            force = request.form.get('force_override', '') == '1'
+
+            if parcel['Status'] == 'Delivered' and not force:
+                session['pending_override'] = {
+                    'tn':           tn,
+                    'parcel_id':    parcel['ParcelID'],
+                    'delivered_date': parcel['DeliveredDate'],
+                    'recipient':    parcel['Recipient'],
+                }
+                session.modified = True
                 return redirect(url_for('deliver_scan'))
 
             queue = session.get('delivery_queue', [])
             already = any(q['parcel_id'] == parcel['ParcelID'] for q in queue)
+
+            if already and not force:
+                session['pending_override'] = {
+                    'tn':        tn,
+                    'parcel_id': parcel['ParcelID'],
+                    'in_queue':  True,
+                    'recipient': parcel['Recipient'],
+                }
+                session.modified = True
+                return redirect(url_for('deliver_scan'))
+
             if already:
-                flash(f'{tn} is already in the delivery queue.', 'warning')
+                flash(f'{tn} confirmed in delivery queue.', 'info')
             else:
                 queue.append({
                     'parcel_id':     parcel['ParcelID'],
@@ -624,6 +673,7 @@ def deliver_scan():
                     f'({len(queue)} parcel{"s" if len(queue) != 1 else ""} queued).',
                     'success'
                 )
+            session.pop('pending_override', None)
             return redirect(url_for('deliver_scan'))
 
         # ── Scan a location QR ────────────────────────────────────
@@ -714,11 +764,13 @@ def deliver_scan():
 
     # ── GET — show current queue ──────────────────────────────────
     queue = session.get('delivery_queue', [])
+    pending_override = session.get('pending_override')
     return render_template('deliver_scan.html',
                            state='scan',
                            queue=queue,
                            location=None,
-                           mismatches=[])
+                           mismatches=[],
+                           pending_override=pending_override)
 
 
 if __name__ == '__main__':
