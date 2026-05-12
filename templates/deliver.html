@@ -44,13 +44,15 @@
       <form method="post" novalidate>
 
         <div class="mb-3">
-          <label for="signed_by" class="form-label">Signed By (Recipient Name) <span class="text-danger">*</span></label>
+          <label for="signed_by" class="form-label">Delivered To
+            <span class="text-secondary small ms-1">(optional)</span></label>
           <input type="text" class="form-control" id="signed_by" name="signed_by"
-                 placeholder="Name of person collecting the parcel" autofocus required>
+                 placeholder="Name of recipient or employee (optional)" autofocus>
         </div>
 
         <div class="mb-3">
-          <label class="form-label">Signature</label>
+          <label class="form-label">Signature
+            <span class="text-secondary small ms-1">(optional)</span></label>
           <canvas id="signature-canvas" height="180"
                   style="height:180px"></canvas>
           <div class="sig-controls">
