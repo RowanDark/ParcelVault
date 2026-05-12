@@ -53,12 +53,16 @@
 
   // ── Compact spaced digit runs (e.g. USPS "9400 1118 9922 3456 7890 00") ──
   function compactDigits(text) {
-    // Repeat four times to close all gaps in a five-group USPS number.
-    let s = text;
-    for (let i = 0; i < 4; i++) {
-      s = s.replace(/(\d) (\d)/g, '$1$2');
-    }
-    return s;
+    // Compact spaces between digits only within contiguous digit-and-space segments.
+    // Splitting on non-digit non-space boundaries prevents routing-prefix digits from
+    // bleeding across parentheses or letters into the tracking number across iterations.
+    return text.replace(/[\d ]+/g, function(segment) {
+      let s = segment;
+      for (let i = 0; i < 4; i++) {
+        s = s.replace(/(\d) (\d)/g, '$1$2');
+      }
+      return s;
+    });
   }
 
   // ── FedEx barcode string pre-processors ──────────────────────
