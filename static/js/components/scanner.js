@@ -390,12 +390,18 @@
     _diag.attempts = 0; _diag.failures = 0; _diag.successes = 0; _diag.frames = 0; _diag.lastFpsAt = performance.now();
     if (status) status.textContent = 'Scanning barcode…';
     _updateDebugOverlay('html5-starting');
-    _html5Scanner = new Html5Qrcode('pv-scan-reader');
+    _html5Scanner = new Html5Qrcode('pv-scan-reader', {
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true,
+      },
+      verbose: false,
+    });
     var FORMAT_SETS = {
       barcode: [
         Html5QrcodeSupportedFormats.CODE_128,
         Html5QrcodeSupportedFormats.PDF_417,
         Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
         Html5QrcodeSupportedFormats.ITF,
         Html5QrcodeSupportedFormats.EAN_13,
       ],
@@ -716,7 +722,7 @@
     var ttfd = document.getElementById('pv-debug-ttfd');
     if (res && video) res.textContent = (video.videoWidth || 0) + 'x' + (video.videoHeight || 0);
     if (fps) fps.textContent = String(_diag.fps || 0);
-    var modeFormats = { barcode: 'CODE_128, PDF_417, CODE_39, ITF, EAN_13', qr: 'QR_CODE, DATA_MATRIX', any: 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13' };
+    var modeFormats = { barcode: 'CODE_128, PDF_417, CODE_39, DATA_MATRIX, ITF, EAN_13', qr: 'QR_CODE, DATA_MATRIX', any: 'CODE_128, QR_CODE, PDF_417, DATA_MATRIX, CODE_39, ITF, EAN_13' };
     if (fmts) fmts.textContent = modeFormats[_mode] || modeFormats.barcode;
     if (ttfd) ttfd.textContent = _diag.firstDecodeMs == null ? '-' : (_diag.firstDecodeMs + ' ms');
     if (st) st.textContent = status + ' | attempts:' + _diag.attempts + ' failures:' + _diag.failures + ' successes:' + _diag.successes + ' format:' + _diag.lastFormat;
